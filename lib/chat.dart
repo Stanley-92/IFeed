@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:iconify_flutter/iconify_flutter.dart';
-import 'package:colorful_iconify_flutter/icons/twemoji.dart';
-import 'package:colorful_iconify_flutter/icons/noto.dart';
 import 'package:iconify_flutter/icons/material_symbols.dart';
 import 'package:iconify_flutter/icons/ph.dart';
 

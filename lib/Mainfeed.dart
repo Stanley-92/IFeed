@@ -1,7 +1,5 @@
 // mainfeed.dart
 import 'dart:io';
-import 'post_modal.dart' show Comment, PostMedia, MediaType;
-
 import 'package:flutter/material.dart';
 import 'package:iconify_flutter/iconify_flutter.dart';
 import 'package:iconify_flutter/icons/mdi.dart';
@@ -12,19 +10,14 @@ import 'package:iconify_flutter/icons/gg.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:iconify_flutter/icons/uil.dart';
-import 'comments_page.dart' as reply; // <= alias all comment-page types
-import 'listcontact.dart' as lc; // lc.ChatListScreen
-import 'profile.dart' as profile; // profile.ProfileUserScreen
+
+import 'comments_page.dart' as reply; // alias the comments page models/widgets
+import 'listcontact.dart' as lc;       // lc.ChatListScreen
+import 'profile.dart' as profile;      // profile.ProfileUserScreen
 
 const String defaultAvatarAsset = 'assets/images/default_avatar.png';
 
 void main() => runApp(const MaterialApp(home: MainfeedScreen()));
-
-
-
-
-
-
 
 /// ======================= MAIN FEED =======================
 class MainfeedScreen extends StatefulWidget {
@@ -43,10 +36,8 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
     );
     if (newPost == null) return;
 
-   
-   
     final _Post converted = _Post(
-      id: DateTime.now().millisecondsSinceEpoch.toString(), // unique id
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
       username: newPost.userName,
       avatar: "", // empty -> show default asset in feed
       time: "just now",
@@ -55,15 +46,11 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
       media: newPost.media
           .map((m) => _FeedMedia(
                 path: m.file.path,
-                type: m.type,
+                type: MediaType.image == m.type ? MediaType.image : MediaType.video,
                 isNetwork: false, // picker results are local files
               ))
           .toList(),
-      likeCount: 0,
-      commentCount: 0,
-      shareCount: 0,
-      isLiked: false,
-      isShared: false,
+      comments: <reply.Comment>[], // start with no comments
     );
 
     setState(() => _feedPosts.insert(0, converted));
@@ -71,60 +58,66 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
 
   String _formatCount(int count) {
     if (count < 1000) return count.toString();
-    return '${(count / 1000).toStringAsFixed(1)}K';
+    final v = (count / 1000).toStringAsFixed(1);
+    return v.endsWith('.0') ? '${v.substring(0, v.length - 2)}K' : '${v}K';
   }
 
- 
-// Comment lis
+  /// Always provide a network image URL for the reply screen header
+  String _replyHeaderAvatar(String avatar) {
+    if (avatar.isNotEmpty && avatar.startsWith('http')) return avatar;
+    // fallback to a network avatar so CommentsPage can render it
+    return 'https://i.pravatar.cc/150?img=68';
+  }
 
+  /// Convert feed media -> reply screen media (supports local + network)
+  List<reply.PostMedia> _toReplyMedia(List<_FeedMedia> items) {
+    final out = <reply.PostMedia>[];
+    for (final m in items) {
+      if (m.type == MediaType.image) {
+        out.add(
+          m.isNetwork
+              ? reply.PostMedia.image(m.path)
+              : reply.PostMedia.imageFile(File(m.path)),
+        );
+      } else {
+        out.add(
+          m.isNetwork
+              ? reply.PostMedia.video(m.path)
+              : reply.PostMedia.videoFile(File(m.path)),
+        );
+      }
+    }
+    return out;
+  }
 
- 
-List<reply.PostMedia> _toReplyMedia(List<_FeedMedia> items) {
-  final out = <reply.PostMedia>[];
-  for (final m in items) {
-    if (m.type == MediaType.image) {
-      out.add(
-        m.isNetwork
-            ? reply.PostMedia.image(m.path)
-            : reply.PostMedia.imageFile(File(m.path)),
-      );
-    } else {
-      out.add(
-        m.isNetwork
-            ? reply.PostMedia.video(m.path)
-            : reply.PostMedia.videoFile(File(m.path)),
-      );
+  Future<void> _openComments(_Post post) async {
+    final updated = await Navigator.push<List<reply.Comment>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => reply.CommentsPage(
+          postAuthorName: post.username,
+          postAuthorAvatar: _replyHeaderAvatar(post.avatar),
+          postTimeText: post.time,
+          postText: post.caption,
+          postMedia: _toReplyMedia(post.media),
+          initialComments: post.comments, // pass current comments
+          showAvatars: true,               // show avatars in replies UI
+        ),
+      ),
+    );
+
+    if (updated != null) {
+      setState(() {
+        post.comments = updated;                 // store back on the post
+        post.commentCount = updated.length;      // keep count in sync
+      });
     }
   }
-  return out;
-}
-
-
-Future<void> _openComments(_Post post) async {
-  final updated = await Navigator.push<List<reply.Comment>>(
-    context,
-    MaterialPageRoute(
-      builder: (_) => reply.CommentsPage(
-        postAuthorName: post.username,
-        postAuthorAvatar:'', // ✅ ensure a real URL           // ⬅️ empty = no header avatar
-        postTimeText: post.time,
-        postText: post.caption,
-        postMedia: _toReplyMedia(post.media),
-        initialComments: const <reply.Comment>[],
-        showAvatars: true,              // ⬅️ NEW: hide all avatars inside page
-      ),
-    ),
-  );
-  if (updated != null) {
-    setState(() => post.commentCount = updated.length);
-  }
-}
-
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xfff3f4f6),  //Backgeround Color
+      backgroundColor: const Color(0xfff3f4f6),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0.8,
@@ -137,10 +130,10 @@ Future<void> _openComments(_Post post) async {
             fontSize: 35,
           ),
         ),
-        actions: [ /// Icon Action 
+        actions: [
           const Padding(
-          padding: EdgeInsets.only(right: 25),
-          child: Iconify(Ph.heart_bold, color: Colors.black87, size: 28),
+            padding: EdgeInsets.only(right: 25),
+            child: Iconify(Ph.heart_bold, color: Colors.black87, size: 28),
           ),
           Padding(
             padding: const EdgeInsets.only(right: 14),
@@ -157,15 +150,10 @@ Future<void> _openComments(_Post post) async {
           ),
         ],
       ),
-
-
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
-            
-
-
-// -------- Stories --------
+            // -------- Stories --------
             SliverToBoxAdapter(
               child: Container(
                 color: Colors.white,
@@ -200,10 +188,7 @@ Future<void> _openComments(_Post post) async {
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 8)),
 
-           
-           
-   // -------- Posts iFeed Firsttime --------
-
+            // -------- Empty state --------
             if (_feedPosts.isEmpty)
               SliverToBoxAdapter(
                 child: Container(
@@ -213,20 +198,15 @@ Future<void> _openComments(_Post post) async {
                     children: [
                       Icon(Icons.photo_library_outlined, size: 60, color: Color.fromARGB(255, 15, 70, 209)),
                       SizedBox(height: 16),
-                      Text(
-                        'No posts yet',
-                        style: TextStyle(fontSize: 18, color: Colors.grey),
-                      ),
+                      Text('No posts yet', style: TextStyle(fontSize: 18, color: Colors.grey)),
                       SizedBox(height: 8),
-                      Text(
-                        'Share your first post!',
-                        style: TextStyle(fontSize: 14, color: Colors.grey),
-                      ),
+                      Text('Share your first post!', style: TextStyle(fontSize: 14, color: Colors.grey)),
                     ],
                   ),
                 ),
               ),
 
+            // -------- Feed list --------
             SliverList.separated(
               itemCount: _feedPosts.length,
               itemBuilder: (_, i) => _PostCard(
@@ -257,11 +237,6 @@ Future<void> _openComments(_Post post) async {
           ],
         ),
       ),
-
-
-
-
-
       bottomNavigationBar: _BottomBar(
         onAdd: () => _handleAddPost(context),
         onProfile: () {
@@ -274,15 +249,6 @@ Future<void> _openComments(_Post post) async {
     );
   }
 }
-
-
-
-
-
-
-
-
-
 
 /// ------------------------- Story Ring -------------------------
 class _StoryRing extends StatelessWidget {
@@ -315,8 +281,58 @@ class _StoryRing extends StatelessWidget {
   }
 }
 
+/// ------------------------- Comments Preview -------------------------
+class _CommentsPreview extends StatelessWidget {
+  const _CommentsPreview({
+    required this.comments,
+    required this.onViewAll,
+  });
 
+  final List<reply.Comment> comments;
+  final VoidCallback onViewAll;
 
+  @override
+  Widget build(BuildContext context) {
+    if (comments.isEmpty) return const SizedBox.shrink();
+
+    final toShow = comments.length > 2 ? comments.take(2).toList() : comments;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(60, 8, 16, 12), // align with caption
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final c in toShow)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: GestureDetector(
+                onTap: onViewAll,
+                child: RichText(
+                  text: TextSpan(
+                    style: const TextStyle(fontSize: 13.5, color: Colors.black87, height: 1.35),
+                    children: [
+                      TextSpan(text: c.userName, style: const TextStyle(fontWeight: FontWeight.w700)),
+                      const TextSpan(text: '  '),
+                      TextSpan(text: c.text),
+                    ],
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          if (comments.length > 2)
+            GestureDetector(
+              onTap: onViewAll,
+              child: Text(
+                'View all ${comments.length} comments',
+                style: const TextStyle(fontSize: 12, color: Colors.black54),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
 
 /// ------------------------- Post Card -------------------------
 class _PostCard extends StatelessWidget {
@@ -340,7 +356,6 @@ class _PostCard extends StatelessWidget {
     if (avatar.isEmpty) return const AssetImage(defaultAvatarAsset);
     if (avatar.startsWith('http')) return NetworkImage(avatar);
     return AssetImage(avatar);
-    // ignore: dead_code
   }
 
   @override
@@ -394,9 +409,6 @@ class _PostCard extends StatelessWidget {
           // Media
           if (post.media.isNotEmpty) _PostMedia(post: post),
 
-
-
-
           // Actions
           Padding(
             padding: const EdgeInsets.fromLTRB(48, 0, 18, 0),
@@ -405,7 +417,7 @@ class _PostCard extends StatelessWidget {
                 // Like
                 IconButton(
                   icon: Iconify(
-                    post.isLiked ? Ph.heart_fill : Ph.heart_bold ,
+                    post.isLiked ? Ph.heart_fill : Ph.heart_bold,
                     size: 24,
                     color: post.isLiked ? Colors.red : null,
                   ),
@@ -454,6 +466,13 @@ class _PostCard extends StatelessWidget {
               ],
             ),
           ),
+
+          // ✅ Inline comments preview
+          if (post.comments.isNotEmpty)
+            _CommentsPreview(
+              comments: post.comments,
+              onViewAll: onOpenComments,
+            ),
         ],
       ),
     );
@@ -524,11 +543,6 @@ void _showPostMenu(BuildContext context, _Post post) {
     },
   );
 }
-
-
-
-
-
 
 class _MenuSection extends StatelessWidget {
   final List<_MenuItem> children;
@@ -800,11 +814,6 @@ class _CoverVideoState extends State<_CoverVideo> {
   }
 }
 
-
-
-
-
-
 /// ------------------------- Auto-aspect (images/videos) -------------------------
 class _ImageAutoAspect extends StatefulWidget {
   final String path;
@@ -948,9 +957,6 @@ class _VideoAutoAspectState extends State<_VideoAutoAspect> {
   }
 }
 
-
-
-
 /// ======================= HOME BOTTOM BAR =======================
 class _BottomBar extends StatelessWidget {
   final VoidCallback onAdd;
@@ -1012,8 +1018,6 @@ class _BarIcon extends StatelessWidget {
     );
   }
 }
-
-
 
 /// ======================= UPLOAD PAGE (no popup) =======================
 class UploadPostPage extends StatefulWidget {
@@ -1106,8 +1110,8 @@ class _UploadPostPageState extends State<UploadPostPage> {
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Row(
-                      children: const [
+                    const Row(
+                      children: [
                         CircleAvatar(
                           radius: 18,
                           backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=68'),
@@ -1238,11 +1242,16 @@ class _Post {
   final String caption;
   final List<_FeedMedia> media;
   final CardAspect aspect;
+
+  // social counts/state
   int likeCount;
   int commentCount;
   int shareCount; // used as "reposts"
   bool isLiked;
   bool isShared;
+
+  // ✅ stored comments for preview + persistence
+  List<reply.Comment> comments;
 
   _Post({
     required this.id,
@@ -1257,7 +1266,8 @@ class _Post {
     this.shareCount = 0,
     this.isLiked = false,
     this.isShared = false,
-  });
+    List<reply.Comment>? comments,
+  }) : comments = comments ?? <reply.Comment>[];
 }
 
 final _names = ["sinayun_xyn", "tyda-one", "kunthear_kh", "back_tow", "dara.kh", "raa.kh"];
@@ -1271,7 +1281,7 @@ final _avatars = [
   "https://i.pravatar.cc/150?img=32",
 ];
 
-/// ======================= PREVIEW WRAP =======================
+/// ======================= PREVIEW WRAP (upload page) =======================
 class _PreviewWrap extends StatelessWidget {
   final List<PickedMedia> media;
   final void Function(int index) onRemove;

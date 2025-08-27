@@ -3,8 +3,17 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:iconify_flutter/iconify_flutter.dart';
 import 'package:iconify_flutter/icons/uil.dart';
-import 'package:iconify_flutter/icons/ph.dart'; // ⬅️ for heart / shuffle / paper-plane
+import 'package:iconify_flutter/icons/ph.dart';
 import 'package:video_player/video_player.dart';
+
+/// ====== Avatar helpers (match feed behavior) ======
+const String defaultAvatarAsset = 'assets/images/default_avatar.png';
+
+ImageProvider _avatarProvider(String avatar) {
+  if (avatar.isEmpty) return const AssetImage(defaultAvatarAsset);
+  if (avatar.startsWith('http')) return NetworkImage(avatar);
+  return AssetImage(avatar); // treat any non-http string as asset path
+}
 
 /// ───────── Public models you use from the feed ─────────
 enum MediaType { image, video }
@@ -53,12 +62,12 @@ class CommentsPage extends StatefulWidget {
   const CommentsPage({
     super.key,
     required this.postAuthorName,
-    required this.postAuthorAvatar, // can be ''
+    required this.postAuthorAvatar, // URL, asset path, or ''
     required this.postTimeText,
     required this.postText,
     required this.postMedia,
     this.initialComments = const <Comment>[],
-    this.showAvatars = true,   // ✅ put it here to default ON
+    this.showAvatars = true,   // default ON
   });
 
   final String postAuthorName;
@@ -68,6 +77,7 @@ class CommentsPage extends StatefulWidget {
   final List<PostMedia> postMedia;
   final List<Comment> initialComments;
   final bool showAvatars;
+
   @override
   State<CommentsPage> createState() => _CommentsPageState();
 }
@@ -168,6 +178,11 @@ class _CommentsPageState extends State<CommentsPage> {
     final hasCaption = widget.postText.trim().isNotEmpty;
     final hasMedia = widget.postMedia.isNotEmpty;
 
+    // Match feed spacing: caption starts ~60 from the left edge when avatar shown.
+    const double feedCaptionLeft = 60.0;
+    // Our container has 16px horizontal padding; add the *extra* padding inside.
+    final double captionExtraLeft = widget.showAvatars ? (feedCaptionLeft - 16.0) : 0.0;
+
     return WillPopScope(
       onWillPop: () async {
         _popWithResult();
@@ -187,59 +202,66 @@ class _CommentsPageState extends State<CommentsPage> {
         ),
         body: Column(
           children: [
-            // ─── Post header ───
+            // ─── Post header (LEFT-aligned like feed) ───
             Container(
               width: double.infinity,
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
               color: Colors.white,
               child: Column(
-                crossAxisAlignment:
-                    widget.showAvatars ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (widget.showAvatars && authorAvatar.isNotEmpty) ...[
-                    CircleAvatar(
-                      radius: 22,
-                      backgroundImage: NetworkImage(authorAvatar),
-                      backgroundColor: Colors.grey.shade200,
-                    ),
-                    const SizedBox(height: 6),
-                  ],
-                  if (authorName.isNotEmpty || postTime.isNotEmpty)
-                    Row(
-                      mainAxisAlignment:
-                          widget.showAvatars ? MainAxisAlignment.center : MainAxisAlignment.start,
-                      children: [
-                        if (authorName.isNotEmpty)
-                          Text(authorName,
-                              style: const TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.w600)),
-                        if (authorName.isNotEmpty && postTime.isNotEmpty)
-                          const SizedBox(width: 6),
-                        if (postTime.isNotEmpty)
-                          Text(postTime,
-                              style: const TextStyle(fontSize: 11, color: Colors.black45)),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (widget.showAvatars) ...[
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundImage: _avatarProvider(authorAvatar),
+                          onBackgroundImageError: (_, __) {},
+                          backgroundColor: Colors.grey.shade200,
+                        ),
+                        const SizedBox(width: 10),
                       ],
-                    ),
-                  if (hasCaption) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      width: double.infinity,
-                      constraints: const BoxConstraints(maxWidth: 560),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF5F5F5),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFEAEAEA)),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (authorName.isNotEmpty)
+                              Text(authorName,
+                                  style: const TextStyle(
+                                      fontSize: 13, fontWeight: FontWeight.w700)),
+                            if (postTime.isNotEmpty)
+                              Text(postTime,
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.black54)),
+                          ],
+                        ),
                       ),
-                      child: SelectableText(
-                        widget.postText,
-                        style: const TextStyle(fontSize: 14, height: 1.35),
+                    ],
+                  ),
+                  if (hasCaption) ...[
+                    const SizedBox(height: 8),
+                    Padding(
+                      padding: EdgeInsets.only(left: captionExtraLeft),
+                      child: Container(
+                        width: double.infinity,
+                        constraints: const BoxConstraints(maxWidth: 560),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F5F5),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFEAEAEA)),
+                        ),
+                        child: SelectableText(
+                          widget.postText,
+                          style: const TextStyle(fontSize: 14, height: 1.35),
+                        ),
                       ),
                     ),
                   ],
                   if (hasMedia) ...[
                     const SizedBox(height: 10),
-                    _ReplyPostMedia(items: widget.postMedia), // ← feed-like layout
+                    _ReplyPostMedia(items: widget.postMedia), // feed-like layout
                   ],
 
                   // ─── Actions row (same icons as feed) ───
@@ -346,9 +368,10 @@ class _CommentsPageState extends State<CommentsPage> {
               child: Row(
                 children: [
                   if (widget.showAvatars) ...[
-                    const CircleAvatar(
+                    CircleAvatar(
                       radius: 16,
-                      backgroundImage: NetworkImage('https://i.pravatar.cc/100?img=32'),
+                      backgroundImage: _avatarProvider('https://i.pravatar.cc/100?img=32'),
+                      onBackgroundImageError: (_, __) {},
                     ),
                     const SizedBox(width: 8),
                   ],
@@ -366,8 +389,7 @@ class _CommentsPageState extends State<CommentsPage> {
                             const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                        ),
+                          borderSide: const BorderSide(color: Color(0xFFE5E7EB))),
                         suffixIcon: _replyTo == null
                             ? null
                             : IconButton(
@@ -402,7 +424,6 @@ class _ReplyPostMedia extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Use same default “auto” aspect as feed when not known
     const double aspect = 4 / 5;
 
     return LayoutBuilder(builder: (context, c) {
@@ -609,7 +630,6 @@ class _CommentNode {
     List<_CommentNode>? replies,
     this.liked = false,
     this.expanded = true,
-    
   }) : replies = replies ?? [];
 
   factory _CommentNode.fromPublic(Comment c) => _CommentNode(
@@ -661,17 +681,14 @@ class _CommentTile extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-
-              // ⬇⬇ INSERT THIS BLOCK HERE
               if (showAvatars) ...[
                 CircleAvatar(
                   radius: 14,
-                  backgroundImage: NetworkImage(comment.avatar),
+                  backgroundImage: _avatarProvider(comment.avatar),
+                  onBackgroundImageError: (_, __) {},
                 ),
                 const SizedBox(width: 10),
               ],
-              // ⬆⬆ END INSERT
-
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -721,7 +738,6 @@ class _CommentTile extends StatelessWidget {
               ),
             ],
           ),
-
           if (comment.replies.isNotEmpty && !comment.expanded)
             Padding(
               padding: EdgeInsets.only(left: (showAvatars ? 24 : 0) + leftPad, top: 2),
