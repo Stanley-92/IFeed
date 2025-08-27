@@ -1,6 +1,9 @@
 // comments_page.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:iconify_flutter/iconify_flutter.dart';
+import 'package:iconify_flutter/icons/uil.dart';
+import 'package:iconify_flutter/icons/ph.dart'; // ⬅️ for heart / shuffle / paper-plane
 import 'package:video_player/video_player.dart';
 
 /// ───────── Public models you use from the feed ─────────
@@ -21,7 +24,7 @@ class PostMedia {
   factory PostMedia.videoFile(File file) => PostMedia._(MediaType.video, file: file);
 
   bool get isLocal => file != null;
-  String get key => isLocal ? file!.path : url!;
+  String get key => isLocal ? file!.path : (url ?? '');
 }
 
 /// Public comment value object (used across pages)
@@ -49,21 +52,22 @@ class Comment {
 class CommentsPage extends StatefulWidget {
   const CommentsPage({
     super.key,
-    this.postAuthorName,
-    this.postAuthorAvatar,
-    this.postText,
-    this.postTimeText,
-    this.postMedia = const [],
+    required this.postAuthorName,
+    required this.postAuthorAvatar, // can be ''
+    required this.postTimeText,
+    required this.postText,
+    required this.postMedia,
     this.initialComments = const <Comment>[],
+    this.showAvatars = true,   // ✅ put it here to default ON
   });
 
-  final String? postAuthorName;
-  final String? postAuthorAvatar;
-  final String? postText;     // caption (optional)
-  final String? postTimeText; // e.g. "1h ago" (optional)
+  final String postAuthorName;
+  final String postAuthorAvatar;
+  final String postTimeText;
+  final String postText;
   final List<PostMedia> postMedia;
   final List<Comment> initialComments;
-
+  final bool showAvatars;
   @override
   State<CommentsPage> createState() => _CommentsPageState();
 }
@@ -77,26 +81,24 @@ class _CommentsPageState extends State<CommentsPage> {
   final List<_CommentNode> _comments = [];
   _CommentNode? _replyTo;
 
-  // Video controllers keyed by media key (url or file path)
-  final Map<String, VideoPlayerController> _videoCtrls = {};
-  final Map<String, Future<void>> _videoInits = {};
+  // Header action state (like/share/repost)
+  bool _headerLiked = false;
+  bool _headerShared = false;
+  int _headerLikes = 0;
+  int _headerReposts = 0;
+
+  String _fmt(int n) {
+    if (n < 1000) return '$n';
+    final v = (n / 1000).toStringAsFixed(1);
+    return v.endsWith('.0') ? '${v.substring(0, v.length - 2)}K' : '${v}K';
+  }
+
+  int get _headerComments => _comments.length;
 
   @override
   void initState() {
     super.initState();
-
-    // seed from public comments
     _comments.addAll(widget.initialComments.map(_CommentNode.fromPublic));
-
-    // init videos (support local + network)
-    for (final m in widget.postMedia.where((m) => m.type == MediaType.video)) {
-      final ctrl = m.isLocal
-          ? VideoPlayerController.file(m.file!)
-          : VideoPlayerController.networkUrl(Uri.parse(m.url!));
-      ctrl.setLooping(true);
-      _videoCtrls[m.key] = ctrl;
-      _videoInits[m.key] = ctrl.initialize();
-    }
   }
 
   @override
@@ -104,9 +106,6 @@ class _CommentsPageState extends State<CommentsPage> {
     _scroll.dispose();
     _input.dispose();
     _focus.dispose();
-    for (final c in _videoCtrls.values) {
-      c.dispose();
-    }
     super.dispose();
   }
 
@@ -162,10 +161,11 @@ class _CommentsPageState extends State<CommentsPage> {
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).padding.bottom;
-    final authorAvatar = widget.postAuthorAvatar ?? 'https://i.pravatar.cc/100?img=68';
-    final authorName = widget.postAuthorName ?? '';
-    final postTime = widget.postTimeText ?? '';
-    final hasCaption = (widget.postText != null && widget.postText!.trim().isNotEmpty);
+
+    final authorAvatar = widget.postAuthorAvatar;
+    final authorName = widget.postAuthorName;
+    final postTime = widget.postTimeText;
+    final hasCaption = widget.postText.trim().isNotEmpty;
     final hasMedia = widget.postMedia.isNotEmpty;
 
     return WillPopScope(
@@ -193,17 +193,21 @@ class _CommentsPageState extends State<CommentsPage> {
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
               color: Colors.white,
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
+                crossAxisAlignment:
+                    widget.showAvatars ? CrossAxisAlignment.center : CrossAxisAlignment.start,
                 children: [
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundImage: NetworkImage(authorAvatar),
-                    backgroundColor: Colors.grey.shade200,
-                  ),
-                  if (authorName.isNotEmpty || postTime.isNotEmpty) ...[
+                  if (widget.showAvatars && authorAvatar.isNotEmpty) ...[
+                    CircleAvatar(
+                      radius: 22,
+                      backgroundImage: NetworkImage(authorAvatar),
+                      backgroundColor: Colors.grey.shade200,
+                    ),
                     const SizedBox(height: 6),
+                  ],
+                  if (authorName.isNotEmpty || postTime.isNotEmpty)
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment:
+                          widget.showAvatars ? MainAxisAlignment.center : MainAxisAlignment.start,
                       children: [
                         if (authorName.isNotEmpty)
                           Text(authorName,
@@ -216,7 +220,6 @@ class _CommentsPageState extends State<CommentsPage> {
                               style: const TextStyle(fontSize: 11, color: Colors.black45)),
                       ],
                     ),
-                  ],
                   if (hasCaption) ...[
                     const SizedBox(height: 10),
                     Container(
@@ -229,19 +232,77 @@ class _CommentsPageState extends State<CommentsPage> {
                         border: Border.all(color: const Color(0xFFEAEAEA)),
                       ),
                       child: SelectableText(
-                        widget.postText!,
+                        widget.postText,
                         style: const TextStyle(fontSize: 14, height: 1.35),
                       ),
                     ),
                   ],
                   if (hasMedia) ...[
                     const SizedBox(height: 10),
-                    _MediaGallery(
-                      media: widget.postMedia,
-                      videoCtrls: _videoCtrls,
-                      videoInits: _videoInits,
-                    ),
+                    _ReplyPostMedia(items: widget.postMedia), // ← feed-like layout
                   ],
+
+                  // ─── Actions row (same icons as feed) ───
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(48, 0, 18, 0), // match feed padding
+                    child: Row(
+                      children: [
+                        // Like
+                        IconButton(
+                          icon: Iconify(
+                            _headerLiked ? Ph.heart_fill : Ph.heart_bold,
+                            size: 24,
+                            color: _headerLiked ? Colors.red : null,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _headerLiked = !_headerLiked;
+                              _headerLiked ? _headerLikes++ : _headerLikes--;
+                              if (_headerLikes < 0) _headerLikes = 0;
+                            });
+                          },
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _fmt(_headerLikes),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: _headerLiked ? Colors.red : Colors.black54,
+                          ),
+                        ),
+
+                        const SizedBox(width: 16),
+
+                        // Comments count (non-click, icon for parity)
+                        const Iconify(Uil.comment, size: 24),
+                        const SizedBox(width: 4),
+                        Text(_fmt(_headerComments), style: const TextStyle(fontSize: 13)),
+
+                        const SizedBox(width: 16),
+
+                        // Repost (shuffle) — bumps reposts
+                        IconButton(
+                          icon: const Iconify(Ph.shuffle_fill, size: 24),
+                          onPressed: () => setState(() => _headerReposts++),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(_fmt(_headerReposts), style: const TextStyle(fontSize: 13)),
+
+                        const SizedBox(width: 16),
+
+                        // Send/Share (paper-plane) — toggle highlight only
+                        IconButton(
+                          icon: Iconify(
+                            _headerShared ? Ph.paper_plane_tilt_fill : Ph.paper_plane_tilt,
+                            size: 24,
+                            color: _headerShared ? Colors.blue : null,
+                          ),
+                          onPressed: () => setState(() => _headerShared = !_headerShared),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -264,6 +325,7 @@ class _CommentsPageState extends State<CommentsPage> {
                   ..._comments.map(
                     (c) => _CommentTile(
                       comment: c,
+                      showAvatars: widget.showAvatars,
                       onReply: _startReply,
                       onLikeToggle: () => setState(() => c.liked = !c.liked),
                       onToggleCollapse: () =>
@@ -283,11 +345,13 @@ class _CommentsPageState extends State<CommentsPage> {
               ),
               child: Row(
                 children: [
-                  const CircleAvatar(
-                    radius: 16,
-                    backgroundImage: NetworkImage('https://i.pravatar.cc/100?img=32'),
-                  ),
-                  const SizedBox(width: 8),
+                  if (widget.showAvatars) ...[
+                    const CircleAvatar(
+                      radius: 16,
+                      backgroundImage: NetworkImage('https://i.pravatar.cc/100?img=32'),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   Expanded(
                     child: TextField(
                       controller: _input,
@@ -326,124 +390,199 @@ class _CommentsPageState extends State<CommentsPage> {
   }
 }
 
-/// ───────── Media gallery helpers ─────────
-class _MediaGallery extends StatelessWidget {
-  const _MediaGallery({
-    required this.media,
-    required this.videoCtrls,
-    required this.videoInits,
-  });
+/// ───────── Reply post media (same rules as feed) ─────────
+class _ReplyPostMedia extends StatelessWidget {
+  const _ReplyPostMedia({required this.items});
+  final List<PostMedia> items;
 
-  final List<PostMedia> media;
-  final Map<String, VideoPlayerController> videoCtrls;
-  final Map<String, Future<void>> videoInits;
+  static const double _side = 60.0;            // same as feed
+  static const double _gap  = 12.0;
+  static const double _minH = 180.0;
+  static const double _maxScreenFraction = 0.55;
 
   @override
   Widget build(BuildContext context) {
-    if (media.length == 1) return _mediaTile(media.first);
+    // Use same default “auto” aspect as feed when not known
+    const double aspect = 4 / 5;
 
-    final crossCount = media.length > 4 ? 3 : 2;
-    return GridView.builder(
-      physics: const NeverScrollableScrollPhysics(),
-      shrinkWrap: true,
-      itemCount: media.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2, crossAxisSpacing: 8, mainAxisSpacing: 8),
-      itemBuilder: (context, i) => _mediaTile(media[i]),
+    return LayoutBuilder(builder: (context, c) {
+      final contentW = c.maxWidth - _side * 2;
+      final naturalH = contentW / aspect;
+      final maxH = MediaQuery.of(context).size.height * _maxScreenFraction;
+      final h = naturalH.clamp(_minH, maxH);
+
+      if (items.length == 1) {
+        final m = items.first;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: _side),
+          child: SizedBox(height: h, child: _ReplyRoundedTile(m: m, aspect: aspect)),
+        );
+      }
+
+      if (items.length == 2) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: _side),
+          child: SizedBox(
+            height: h,
+            child: Row(
+              children: [
+                Expanded(child: _ReplyRoundedTile(m: items[0], aspect: aspect)),
+                const SizedBox(width: _gap),
+                Expanded(child: _ReplyRoundedTile(m: items[1], aspect: aspect)),
+              ],
+            ),
+          ),
+        );
+      }
+
+      // 3+ → horizontal carousel like feed
+      return SizedBox(
+        height: h,
+        child: ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: _side),
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const SizedBox(width: _gap),
+          itemBuilder: (_, i) {
+            final m = items[i];
+            return SizedBox(width: h * aspect, child: _ReplyRoundedTile(m: m, aspect: aspect));
+          },
+        ),
+      );
+    });
+  }
+}
+
+class _ReplyRoundedTile extends StatelessWidget {
+  const _ReplyRoundedTile({required this.m, required this.aspect});
+  final PostMedia m;
+  final double aspect;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: AspectRatio(
+        aspectRatio: aspect,
+        child: _ReplyFillMedia(m: m),
+      ),
     );
   }
+}
 
-  Widget _mediaTile(PostMedia m) {
-    final r = BorderRadius.circular(12);
+class _ReplyFillMedia extends StatefulWidget {
+  const _ReplyFillMedia({required this.m});
+  final PostMedia m;
 
-    if (m.type == MediaType.image) {
-      return ClipRRect(
-        borderRadius: r,
-        child: AspectRatio(
-          aspectRatio: 4 / 5,
-          child: m.isLocal
-              ? Image.file(m.file!, fit: BoxFit.cover)
-              : Image.network(m.url!, fit: BoxFit.cover),
-        ),
+  @override
+  State<_ReplyFillMedia> createState() => _ReplyFillMediaState();
+}
+
+class _ReplyFillMediaState extends State<_ReplyFillMedia> {
+  VideoPlayerController? _c;
+  bool _ready = false;
+
+  bool get _isImage => widget.m.type == MediaType.image;
+  File? get _file => widget.m.file;
+  String? get _url => widget.m.url;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!_isImage) {
+      if (_file != null) {
+        _c = VideoPlayerController.file(_file!);
+      } else if (_url != null && _url!.isNotEmpty) {
+        _c = VideoPlayerController.networkUrl(Uri.parse(_url!));
+      }
+      _c?.setLooping(true);
+      _c?.initialize().then((_) {
+        if (mounted) setState(() => _ready = true);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _c?.pause();
+    _c?.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (_c == null || !_ready) return;
+    if (_c!.value.isPlaying) {
+      _c!.pause();
+    } else {
+      _c!.play();
+    }
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isImage) {
+      if (_file != null) {
+        return Image.file(_file!, fit: BoxFit.cover);
+      } else {
+        return Image.network(_url ?? '', fit: BoxFit.cover);
+      }
+    }
+
+    if (_c == null) {
+      return const ColoredBox(
+        color: Colors.black12,
+        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
       );
     }
 
-    final ctrl = videoCtrls[m.key]!;
-    final init = videoInits[m.key]!;
-    return ClipRRect(
-      borderRadius: r,
-      child: FutureBuilder(
-        future: init,
-        builder: (context, snap) {
-          if (snap.connectionState != ConnectionState.done) {
-            return const _VideoLoading();
-          }
-          return Stack(
-            alignment: Alignment.center,
-            children: [
-              AspectRatio(
-                aspectRatio: ctrl.value.aspectRatio == 0 ? 16 / 9 : ctrl.value.aspectRatio,
-                child: VideoPlayer(ctrl),
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: _ready
+              ? FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: _c!.value.size.width,
+                    height: _c!.value.size.height,
+                    child: VideoPlayer(_c!),
+                  ),
+                )
+              : const ColoredBox(
+                  color: Colors.black12,
+                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                ),
+        ),
+        const Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomCenter,
+                  end: Alignment.topCenter,
+                  colors: [Colors.black26, Colors.transparent],
+                ),
               ),
-              _PlayPauseOverlay(ctrl: ctrl),
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _VideoLoading extends StatelessWidget {
-  const _VideoLoading();
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF111111),
-      child: const Center(
-        child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)),
-      ),
-    );
-  }
-}
-
-class _PlayPauseOverlay extends StatefulWidget {
-  const _PlayPauseOverlay({required this.ctrl});
-  final VideoPlayerController ctrl;
-  @override
-  State<_PlayPauseOverlay> createState() => _PlayPauseOverlayState();
-}
-
-class _PlayPauseOverlayState extends State<_PlayPauseOverlay> {
-  bool _show = true;
-  void _toggle() async {
-    if (widget.ctrl.value.isPlaying) {
-      await widget.ctrl.pause();
-    } else {
-      await widget.ctrl.play();
-    }
-    setState(() => _show = true);
-    Future.delayed(const Duration(milliseconds: 900), () {
-      if (mounted) setState(() => _show = false);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: _toggle,
-      child: AnimatedOpacity(
-        opacity: _show ? 1 : 0,
-        duration: const Duration(milliseconds: 180),
-        child: Container(
-          color: Colors.black26,
-          child: Icon(
-            widget.ctrl.value.isPlaying ? Icons.pause_circle : Icons.play_circle,
-            size: 56,
-            color: Colors.white,
+            ),
           ),
         ),
-      ),
+        Positioned.fill(
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _toggle,
+              child: Center(
+                child: AnimatedOpacity(
+                  opacity: (_c?.value.isPlaying ?? false) ? 0.0 : 1.0,
+                  duration: const Duration(milliseconds: 150),
+                  child: const Icon(Icons.play_circle_fill, size: 56, color: Colors.white),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -470,6 +609,7 @@ class _CommentNode {
     List<_CommentNode>? replies,
     this.liked = false,
     this.expanded = true,
+    
   }) : replies = replies ?? [];
 
   factory _CommentNode.fromPublic(Comment c) => _CommentNode(
@@ -495,12 +635,14 @@ class _CommentNode {
 
 class _CommentTile extends StatelessWidget {
   final _CommentNode comment;
+  final bool showAvatars;
   final void Function(_CommentNode) onReply;
   final VoidCallback onLikeToggle;
   final VoidCallback onToggleCollapse;
 
   const _CommentTile({
     required this.comment,
+    required this.showAvatars,
     required this.onReply,
     required this.onLikeToggle,
     required this.onToggleCollapse,
@@ -510,18 +652,26 @@ class _CommentTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final leftPad = comment.isReply ? 32.0 : 0.0;
-
+    final leftPad = comment.isReply ? 5.0 : 0.0;
     return Padding(
-      padding: EdgeInsets.fromLTRB(leftPad, 10, 0, 2),
+      padding: EdgeInsets.fromLTRB(leftPad, 5, 0, 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(radius: 14, backgroundImage: NetworkImage(comment.avatar)),
-              const SizedBox(width: 10),
+
+              // ⬇⬇ INSERT THIS BLOCK HERE
+              if (showAvatars) ...[
+                CircleAvatar(
+                  radius: 14,
+                  backgroundImage: NetworkImage(comment.avatar),
+                ),
+                const SizedBox(width: 10),
+              ],
+              // ⬆⬆ END INSERT
+
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -530,27 +680,36 @@ class _CommentTile extends StatelessWidget {
                       text: TextSpan(
                         style: theme.textTheme.bodyMedium?.copyWith(color: Colors.black87),
                         children: [
-                          TextSpan(text: comment.userName, style: const TextStyle(fontWeight: FontWeight.w700)),
+                          TextSpan(
+                            text: comment.userName,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
                           const TextSpan(text: '  '),
-                          TextSpan(text: comment.time, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+                          TextSpan(
+                            text: comment.time,
+                            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                          ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Text(comment.text),
                     const SizedBox(height: 6),
                     Row(
                       children: [
                         IconButton(
-                          icon: Icon(comment.liked ? Icons.favorite : Icons.favorite_border,
-                              size: 20, color: comment.liked ? Colors.red : null),
+                          icon: Icon(
+                            comment.liked ? Icons.favorite : Icons.favorite_border,
+                            size: 20,
+                            color: comment.liked ? Colors.red : null,
+                          ),
                           onPressed: onLikeToggle,
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                         ),
                         const SizedBox(width: 10),
                         IconButton(
-                          icon: const Icon(Icons.reply_outlined, size: 20),
+                          icon: const Iconify(Uil.comment, size: 20),
                           onPressed: () => onReply(comment),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
@@ -562,9 +721,10 @@ class _CommentTile extends StatelessWidget {
               ),
             ],
           ),
+
           if (comment.replies.isNotEmpty && !comment.expanded)
             Padding(
-              padding: EdgeInsets.only(left: leftPad + 46 - leftPad, top: 4),
+              padding: EdgeInsets.only(left: (showAvatars ? 24 : 0) + leftPad, top: 2),
               child: TextButton(
                 onPressed: onToggleCollapse,
                 style: TextButton.styleFrom(
@@ -578,6 +738,7 @@ class _CommentTile extends StatelessWidget {
             ...comment.replies.map(
               (r) => _CommentTile(
                 comment: r,
+                showAvatars: showAvatars,
                 onReply: onReply,
                 onLikeToggle: () {},
                 onToggleCollapse: () {},

@@ -19,6 +19,7 @@ class Comment {
   final String text;
   final bool isReply;
   final List<Comment> replies;
+   final List<PostMedia> media;  
   bool liked;
   bool expanded;
 
@@ -32,7 +33,9 @@ class Comment {
     List<Comment>? replies,
     this.liked = false,
     this.expanded = true,
+    this.media = const <PostMedia>[],
   }) : replies = replies ?? [];
+  
 }
 
 class Post {
