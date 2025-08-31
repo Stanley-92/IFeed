@@ -1,5 +1,6 @@
 // mainfeed.dart
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:iconify_flutter/iconify_flutter.dart';
 import 'package:iconify_flutter/icons/mdi.dart';
@@ -7,17 +8,43 @@ import 'package:iconify_flutter/icons/ph.dart';
 import 'package:iconify_flutter/icons/material_symbols.dart';
 import 'package:iconify_flutter/icons/ion.dart';
 import 'package:iconify_flutter/icons/gg.dart';
+import 'package:iconify_flutter/icons/uil.dart';
+import 'package:iconify_flutter/icons/tabler.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
-import 'package:iconify_flutter/icons/uil.dart';
+import 'package:visibility_detector/visibility_detector.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 
-import 'comments_page.dart' as reply; // alias the comments page models/widgets
-import 'listcontact.dart' as lc;       // lc.ChatListScreen
-import 'profile.dart' as profile;      // profile.ProfileUserScreen
+import 'suggestions_page.dart';
+import 'reel_page.dart';
+import 'comments_page.dart' as reply; // Comments page & models
+import 'listcontact.dart' as lc;
+import 'profile.dart' as profile;
 
 const String defaultAvatarAsset = 'assets/images/default_avatar.png';
 
 void main() => runApp(const MaterialApp(home: MainfeedScreen()));
+
+/// ======================= STORY MODEL =======================
+class Story {
+  Story({
+    required this.id,
+    required this.name,
+    required this.isVideo,
+    required this.isLocal,
+    this.mediaPath,
+    this.coverUrl,
+    this.thumbByes,
+  });
+
+  final String id;
+  final String name;
+  final bool isVideo;
+  final bool isLocal;
+  final String? mediaPath; // local file path
+  final String? coverUrl; // network image (seeded)
+  final Uint8List? thumbByes; // generated thumbnail for video
+}
 
 /// ======================= MAIN FEED =======================
 class MainfeedScreen extends StatefulWidget {
@@ -27,8 +54,74 @@ class MainfeedScreen extends StatefulWidget {
 }
 
 class _MainfeedScreenState extends State<MainfeedScreen> {
-  final List<_Post> _feedPosts = []; // start empty
+  final List<_Post> _feedPosts = [];
 
+  /// Reels we’ll pass to ReelsPage. We add uploaded videos here.
+  final List<ReelItem> _reels = <ReelItem>[];
+
+  // ----- Stories state -----
+  final ImagePicker _storyPicker = ImagePicker();
+
+  // Your single story (null = none yet)
+  Story? myStory;
+
+  // Other users' stories
+  late List<Story> stories = List.generate(
+    8,
+    (i) => Story(
+      id: 'rem_$i',
+      name: _names[i % _names.length],
+      isVideo: false,
+      isLocal: false,
+      coverUrl: _avatars[i % _avatars.length],
+    ),
+  );
+
+  // Create/replace your single story — DIRECT TO GALLERY (photo OR video)
+  Future<void> _addStory() async {
+    final List<XFile> files = await _storyPicker.pickMultipleMedia();
+    if (files.isEmpty) return;
+
+    final XFile picked = files.first;
+    bool isVideoPath(String p) {
+      final s = p.toLowerCase();
+      return s.endsWith('.mp4') ||
+          s.endsWith('.mov') ||
+          s.endsWith('.m4v') ||
+          s.endsWith('.3gp') ||
+          s.endsWith('.webm') ||
+          s.endsWith('.mkv') ||
+          s.endsWith('.avi');
+    }
+
+    Uint8List? thumb;
+    if (isVideoPath(picked.path)) {
+      try {
+        thumb = await VideoThumbnail.thumbnailData(
+          video: picked.path,
+          imageFormat: ImageFormat.PNG,
+          quality: 60,
+        );
+      } catch (_) {}
+    }
+
+    setState(() {
+      myStory = Story(
+        id: 'my_${DateTime.now().millisecondsSinceEpoch}',
+        name: 'Your story',
+        isVideo: isVideoPath(picked.path),
+        isLocal: true,
+        mediaPath: picked.path,
+        thumbByes: thumb,
+      );
+    });
+  }
+
+  void _openStory(Story s) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => StoryViewer(story: s)));
+  }
+
+  // ----- Posts -----
   Future<void> _handleAddPost(BuildContext context) async {
     final Post? newPost = await Navigator.push<Post>(
       context,
@@ -36,22 +129,38 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
     );
     if (newPost == null) return;
 
+    // Convert to feed post
     final _Post converted = _Post(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       username: newPost.userName,
-      avatar: "", // empty -> show default asset in feed
+      avatar: "",
       time: "just now",
       caption: newPost.text,
       aspect: CardAspect.auto,
       media: newPost.media
-          .map((m) => _FeedMedia(
-                path: m.file.path,
-                type: MediaType.image == m.type ? MediaType.image : MediaType.video,
-                isNetwork: false, // picker results are local files
-              ))
+          .map((m) => _FeedMedia(path: m.file.path, type: m.type, isNetwork: false))
           .toList(),
-      comments: <reply.Comment>[], // start with no comments
+      comments: <reply.Comment>[],
     );
+
+    // Add any uploaded videos to reels list (as local file URLs)
+    for (final m in newPost.media) {
+      if (m.type == MediaType.video) {
+        _reels.insert(
+          0,
+          ReelItem(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            videoUrl: 'file://${m.file.path}',
+            caption: newPost.text.isEmpty ? 'New reel' : newPost.text,
+            music: 'Original Audio',
+            avatarUrl: 'https://i.pravatar.cc/150?img=32',
+            authorName: newPost.userName,
+            likes: 0,
+            comments: 0,
+          ),
+        );
+      }
+    }
 
     setState(() => _feedPosts.insert(0, converted));
   }
@@ -62,29 +171,22 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
     return v.endsWith('.0') ? '${v.substring(0, v.length - 2)}K' : '${v}K';
   }
 
-  /// Always provide a network image URL for the reply screen header
   String _replyHeaderAvatar(String avatar) {
     if (avatar.isNotEmpty && avatar.startsWith('http')) return avatar;
-    // fallback to a network avatar so CommentsPage can render it
     return 'https://i.pravatar.cc/150?img=68';
   }
 
-  /// Convert feed media -> reply screen media (supports local + network)
   List<reply.PostMedia> _toReplyMedia(List<_FeedMedia> items) {
     final out = <reply.PostMedia>[];
     for (final m in items) {
       if (m.type == MediaType.image) {
-        out.add(
-          m.isNetwork
-              ? reply.PostMedia.image(m.path)
-              : reply.PostMedia.imageFile(File(m.path)),
-        );
+        out.add(m.isNetwork
+            ? reply.PostMedia.image(m.path)
+            : reply.PostMedia.imageFile(File(m.path)));
       } else {
-        out.add(
-          m.isNetwork
-              ? reply.PostMedia.video(m.path)
-              : reply.PostMedia.videoFile(File(m.path)),
-        );
+        out.add(m.isNetwork
+            ? reply.PostMedia.video(m.path)
+            : reply.PostMedia.videoFile(File(m.path)));
       }
     }
     return out;
@@ -100,24 +202,57 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
           postTimeText: post.time,
           postText: post.caption,
           postMedia: _toReplyMedia(post.media),
-          initialComments: post.comments, // pass current comments
-          showAvatars: true,               // show avatars in replies UI
+          currentUserName: 'sinayun_xyn',
+          currentUserAvatar: 'https://i.pravatar.cc/100?img=32',
+          initialComments: post.comments,
+          showAvatars: true,
         ),
       ),
     );
 
     if (updated != null) {
       setState(() {
-        post.comments = updated;                 // store back on the post
-        post.commentCount = updated.length;      // keep count in sync
+        post.comments = updated;
+        post.commentCount = updated.length;
       });
     }
   }
 
+  // —— Open Reel Video
+  void _openReels() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ReelsPage(items: _reels.isEmpty ? null : _reels),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    // choose image for your tile if you posted a photo; otherwise fallback
+    final my = myStory;
+    ImageProvider? myProvider;
+    bool myIsVideo = false;
+    if (my != null) {
+      myIsVideo = my.isVideo;
+      if (my.isLocal && my.mediaPath != null) {
+        if (my.isVideo && my.thumbByes != null) {
+          myProvider = MemoryImage(my.thumbByes!);
+        } else {
+          myProvider = FileImage(File(my.mediaPath!));
+        }
+      } else if (!my.isLocal && my.coverUrl != null) {
+        myProvider = NetworkImage(my.coverUrl!);
+      } else {
+        myProvider = NetworkImage(_avatars.first);
+      }
+    } else {
+      myProvider = NetworkImage(_avatars.first);
+    }
+
     return Scaffold(
-      backgroundColor: const Color(0xfff3f4f6),
+      backgroundColor: const Color.fromARGB(255, 255, 255, 255),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0.8,
@@ -145,7 +280,7 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
                   MaterialPageRoute(builder: (_) => const lc.ChatListScreen()),
                 );
               },
-              child: const Iconify(Ph.chat_circle, color: Colors.black87, size: 26),
+              child: const Iconify(Uil.comment, color: Colors.black87, size: 28),
             ),
           ),
         ],
@@ -153,7 +288,7 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
       body: SafeArea(
         child: CustomScrollView(
           slivers: [
-            // -------- Stories --------
+            // -------------------- Stories --------------------
             SliverToBoxAdapter(
               child: Container(
                 color: Colors.white,
@@ -164,14 +299,55 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 30),
                     scrollDirection: Axis.horizontal,
                     itemBuilder: (_, i) {
+                      // First slot = Your story (single slot)
+                      if (i == 0) {
+                        return Column(
+                          children: [
+                            GestureDetector(
+                              onTap: () => my == null ? _addStory() : _openStory(my),
+                              child: _StoryRing.fromProvider(
+                                imageProvider: myProvider,
+                                isVideo: myIsVideo,
+                                showPlus: true,
+                                onPlusTap: _addStory,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const SizedBox(
+                              width: 70,
+                              child: Text(
+                                'Your story',
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(fontSize: 11),
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+
+                      // other users
+                      final s = stories[(i - 1) % stories.length];
+                      final ImageProvider? imgProvider = s.isLocal
+                          ? (!s.isVideo && s.mediaPath != null
+                              ? FileImage(File(s.mediaPath!))
+                              : (s.thumbByes != null ? MemoryImage(s.thumbByes!) : null))
+                          : (s.coverUrl != null ? NetworkImage(s.coverUrl!) : null);
+
                       return Column(
                         children: [
-                          _StoryRing(imageUrl: _avatars[i % _avatars.length]),
+                          GestureDetector(
+                            onTap: () => _openStory(s),
+                            child: _StoryRing.fromProvider(
+                              imageProvider: imgProvider,
+                              isVideo: s.isVideo,
+                            ),
+                          ),
                           const SizedBox(height: 8),
                           SizedBox(
                             width: 70,
                             child: Text(
-                              _names[i % _names.length],
+                              s.name,
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
                               style: const TextStyle(fontSize: 11),
@@ -181,64 +357,49 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
                       );
                     },
                     separatorBuilder: (_, __) => const SizedBox(width: 22),
-                    itemCount: 12,
+                    itemCount: stories.length + 1, // +1 = Your story only (no duplicates)
                   ),
                 ),
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 8)),
 
-            // -------- Empty state --------
-            if (_feedPosts.isEmpty)
-              SliverToBoxAdapter(
-                child: Container(
-                  color: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 40),
-                  child: const Column(
-                    children: [
-                      Icon(Icons.photo_library_outlined, size: 60, color: Color.fromARGB(255, 15, 70, 209)),
-                      SizedBox(height: 16),
-                      Text('No posts yet', style: TextStyle(fontSize: 18, color: Colors.grey)),
-                      SizedBox(height: 8),
-                      Text('Share your first post!', style: TextStyle(fontSize: 14, color: Colors.grey)),
-                    ],
-                  ),
-                ),
-              ),
+            if (_feedPosts.isEmpty) const SliverToBoxAdapter(child: _EmptyFeed()),
 
-            // -------- Feed list --------
-            SliverList.separated(
-              itemCount: _feedPosts.length,
-              itemBuilder: (_, i) => _PostCard(
-                post: _feedPosts[i],
-                onOpenComments: () => _openComments(_feedPosts[i]),
-                onLike: () {
-                  setState(() {
-                    final p = _feedPosts[i];
-                    p.isLiked = !p.isLiked;
-                    p.isLiked ? p.likeCount++ : p.likeCount--;
-                  });
+            // -------------------- Feed list (with separators) --------------------
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, i) {
+                  if (i.isOdd) return const SizedBox(height: 30);
+                  final index = i ~/ 2;
+                  if (index >= _feedPosts.length) return null;
+                  final post = _feedPosts[index];
+                  return _PostCard(
+                    post: post,
+                    onOpenComments: () => _openComments(post),
+                    onLike: () {
+                      setState(() {
+                        post.isLiked = !post.isLiked;
+                        post.isLiked ? post.likeCount++ : post.likeCount--;
+                      });
+                    },
+                    onShare: () => setState(() => post.isShared = !post.isShared),
+                    onRepost: () => setState(() => post.shareCount++),
+                    formatCount: _formatCount,
+                  );
                 },
-                onShare: () {
-                  setState(() {
-                    _feedPosts[i].isShared = !_feedPosts[i].isShared;
-                  });
-                },
-                onRepost: () {
-                  setState(() {
-                    _feedPosts[i].shareCount++;
-                  });
-                },
-                formatCount: _formatCount,
+                childCount: _feedPosts.isEmpty ? 0 : _feedPosts.length * 2 - 1,
               ),
-              separatorBuilder: (_, __) => const SizedBox(height: 30),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 80)),
           ],
         ),
       ),
+
+      // Bottom bar
       bottomNavigationBar: _BottomBar(
         onAdd: () => _handleAddPost(context),
+        onReels: _openReels,
         onProfile: () {
           Navigator.push(
             context,
@@ -250,33 +411,112 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
   }
 }
 
-/// ------------------------- Story Ring -------------------------
-class _StoryRing extends StatelessWidget {
-  final String imageUrl;
-  const _StoryRing({required this.imageUrl});
+class _EmptyFeed extends StatelessWidget {
+  const _EmptyFeed();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 80,
-      height: 80,
-      decoration: const BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: SweepGradient(
-          colors: [Color(0xffb14cff), Color(0xffff4cf0), Color(0xffb14cff)],
-        ),
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: const Column(
+        children: [
+          Icon(Icons.photo_library_outlined, size: 60, color: Color.fromARGB(255, 15, 70, 209)),
+          SizedBox(height: 16),
+          Text('No posts yet', style: TextStyle(fontSize: 18, color: Colors.grey)),
+          SizedBox(height: 8),
+          Text('Share your first post!', style: TextStyle(fontSize: 14, color: Colors.grey)),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(3),
-        child: Container(
-          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-          padding: const EdgeInsets.all(3),
-          child: CircleAvatar(
-            backgroundImage: NetworkImage(imageUrl),
-            onBackgroundImageError: (_, __) => const Icon(Icons.error),
+    );
+  }
+}
+
+/// ------------------------- Story Ring w/ Plus Badge -------------------------
+class _StoryRing extends StatelessWidget {
+  final String? imageUrl;
+  final bool showPlus;
+  final bool isVideo; // only for named ctor
+  final ImageProvider? _provider;
+  final VoidCallback? onPlusTap;
+
+  const _StoryRing({
+    Key? key,
+    required String imageUrl,
+    this.showPlus = false,
+    this.onPlusTap,
+  })  : imageUrl = imageUrl,
+        isVideo = false,
+        _provider = null,
+        super(key: key);
+
+  const _StoryRing.fromProvider({
+    Key? key,
+    required ImageProvider? imageProvider,
+    this.showPlus = false,
+    this.isVideo = false,
+    this.onPlusTap,
+  })  : imageUrl = null,
+        _provider = imageProvider,
+        super(key: key);
+
+  ImageProvider? get provider {
+    if (_provider != null) return _provider;
+    if (imageUrl == null) return null;
+    return NetworkImage(imageUrl!);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: 80,
+          height: 80,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: SweepGradient(
+              colors: [Color(0xffb14cff), Color(0xffff4cf0), Color(0xffb14cff)],
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(3),
+            child: Container(
+              decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+              padding: const EdgeInsets.all(3),
+              child: CircleAvatar(
+                radius: 34,
+                backgroundColor: const Color(0xFF222222),
+                backgroundImage: provider,
+              ),
+            ),
           ),
         ),
-      ),
+        if (showPlus)
+          Positioned(
+            bottom: 0,
+            right: 0,
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onPlusTap,
+                child: Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: const Color.fromARGB(255, 34, 59, 197),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: const [BoxShadow(blurRadius: 2, color: Colors.black26)],
+                  ),
+                  child: const Icon(Icons.add, color: Colors.white, size: 16),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -286,38 +526,92 @@ class _CommentsPreview extends StatelessWidget {
   const _CommentsPreview({
     required this.comments,
     required this.onViewAll,
+    required this.onReply,
+    required this.onLikeToggle,
   });
 
   final List<reply.Comment> comments;
   final VoidCallback onViewAll;
+  final void Function(reply.Comment) onReply;
+  final void Function(reply.Comment) onLikeToggle;
+
+  ImageProvider _commentAvatar(String url) {
+    if (url.isEmpty) return const AssetImage(defaultAvatarAsset);
+    return NetworkImage(url);
+  }
 
   @override
   Widget build(BuildContext context) {
     if (comments.isEmpty) return const SizedBox.shrink();
 
     final toShow = comments.length > 2 ? comments.take(2).toList() : comments;
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(60, 8, 16, 12), // align with caption
+      padding: const EdgeInsets.fromLTRB(88, 18, 8, 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           for (final c in toShow)
             Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: GestureDetector(
-                onTap: onViewAll,
-                child: RichText(
-                  text: TextSpan(
-                    style: const TextStyle(fontSize: 13.5, color: Colors.black87, height: 1.35),
+              padding: const EdgeInsets.only(bottom: 15),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextSpan(text: c.userName, style: const TextStyle(fontWeight: FontWeight.w700)),
-                      const TextSpan(text: '  '),
-                      TextSpan(text: c.text),
+                      CircleAvatar(radius: 20, backgroundImage: _commentAvatar(c.avatar)),
+                      const SizedBox(width: 18),
+                      Expanded(
+                        child: RichText(
+                          text: TextSpan(
+                            style: const TextStyle(fontSize: 13.5, color: Colors.black87, height: 2.0),
+                            children: [
+                              TextSpan(text: c.userName, style: const TextStyle(fontWeight: FontWeight.w700)),
+                              const TextSpan(text: '  '),
+                              TextSpan(
+                                text: c.time.isNotEmpty ? c.time : 'now',
+                                style: const TextStyle(fontSize: 12, color: Colors.grey),
+                              ),
+                              const TextSpan(text: '\n'),
+                              TextSpan(text: c.text),
+                            ],
+                          ),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     ],
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                  const SizedBox(height: 1),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Iconify(Ph.heart_bold, size: 20),
+                        padding: const EdgeInsets.fromLTRB(58, 10, 12, 5),
+                        constraints: const BoxConstraints(),
+                        onPressed: () => onLikeToggle(c),
+                      ),
+                      const SizedBox(width: 5),
+                      IconButton(
+                        icon: const Iconify(Uil.comment, size: 20),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => onReply(c),
+                      ),
+                      IconButton(
+                        icon: const Iconify(Ph.shuffle_bold, size: 20),
+                        onPressed: () {},
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      IconButton(
+                        icon: const Iconify(Ph.paper_plane_tilt_bold, size: 20),
+                        onPressed: () {},
+                      )
+                    ],
+                  ),
+                ],
               ),
             ),
           if (comments.length > 2)
@@ -325,7 +619,7 @@ class _CommentsPreview extends StatelessWidget {
               onTap: onViewAll,
               child: Text(
                 'View all ${comments.length} comments',
-                style: const TextStyle(fontSize: 12, color: Colors.black54),
+                style: const TextStyle(fontSize: 15, color: Colors.black54),
               ),
             ),
         ],
@@ -339,8 +633,8 @@ class _PostCard extends StatelessWidget {
   final _Post post;
   final VoidCallback onOpenComments;
   final VoidCallback onLike;
-  final VoidCallback onShare;   // paper-plane toggle
-  final VoidCallback onRepost;  // shuffle increments shareCount
+  final VoidCallback onShare;
+  final VoidCallback onRepost;
   final String Function(int) formatCount;
 
   const _PostCard({
@@ -362,29 +656,27 @@ class _PostCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: Colors.white,
-      margin: const EdgeInsets.symmetric(vertical: 1, horizontal: 1),
+      margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 10, 12, 5),
+            padding: const EdgeInsets.fromLTRB(38, 10, 12, 5),
             child: Row(
               children: [
                 CircleAvatar(
-                  radius: 18,
+                  radius: 25,
                   backgroundImage: _avatarProvider(post.avatar),
                   onBackgroundImageError: (_, __) {},
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 18),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(post.username,
-                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                      Text(post.time,
-                          style: const TextStyle(color: Colors.black54, fontSize: 11)),
+                      Text(post.username, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+                      Text(post.time, style: const TextStyle(color: Colors.black54, fontSize: 12)),
                     ],
                   ),
                 ),
@@ -399,11 +691,8 @@ class _PostCard extends StatelessWidget {
           // Caption
           if (post.caption.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(60, 0, 16, 18),
-              child: Text(
-                post.caption,
-                style: const TextStyle(fontSize: 13.5, color: Colors.black87, height: 1.35),
-              ),
+              padding: const EdgeInsets.fromLTRB(100, 0, 12, 18),
+              child: Text(post.caption, style: const TextStyle(fontSize: 15, color: Colors.black87, height: 1.35)),
             ),
 
           // Media
@@ -411,67 +700,48 @@ class _PostCard extends StatelessWidget {
 
           // Actions
           Padding(
-            padding: const EdgeInsets.fromLTRB(48, 0, 18, 0),
+            padding: const EdgeInsets.fromLTRB(88, 0, 18, 0),
             child: Row(
               children: [
-                // Like
                 IconButton(
-                  icon: Iconify(
-                    post.isLiked ? Ph.heart_fill : Ph.heart_bold,
-                    size: 24,
-                    color: post.isLiked ? Colors.red : null,
-                  ),
+                  icon: Iconify(post.isLiked ? Ph.heart_fill : Ph.heart_bold, size: 24, color: post.isLiked ? Colors.red : null),
                   onPressed: onLike,
                 ),
-                const SizedBox(width: 4),
-                Text(
-                  formatCount(post.likeCount),
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: post.isLiked ? Colors.red : Colors.black54,
+                if (post.likeCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 16.0),
+                    child: Text(
+                      formatCount(post.likeCount),
+                      style: TextStyle(fontSize: 13, color: post.isLiked ? Colors.red : Colors.black54),
+                    ),
                   ),
-                ),
-
-                const SizedBox(width: 16),
-
-                // Comments
-                IconButton(
-                  icon: const Iconify(Uil.comment, size: 24),
-                  onPressed: onOpenComments,
-                ),
-                const SizedBox(width: 4),
-                Text(formatCount(post.commentCount), style: const TextStyle(fontSize: 13)),
-
-                const SizedBox(width: 16),
-
-                // Repost (shuffle) — bumps shareCount
-                IconButton(
-                  icon: const Iconify(Ph.shuffle_fill, size: 24),
-                  onPressed: onRepost,
-                ),
-                const SizedBox(width: 4),
-                Text(formatCount(post.shareCount), style: const TextStyle(fontSize: 13)),
-
-                const SizedBox(width: 16),
-
-                // Send/Share (paper-plane) — toggle highlight only
-                IconButton(
-                  icon: Iconify(
-                    post.isShared ? Ph.paper_plane_tilt_fill : Ph.paper_plane_tilt,
-                    size: 24,
-                    color: post.isShared ? Colors.blue : null,
+                IconButton(icon: const Iconify(Uil.comment, size: 24), onPressed: onOpenComments),
+                if (post.commentCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 16.0, left: 4),
+                    child: Text(formatCount(post.commentCount), style: const TextStyle(fontSize: 13)),
                   ),
+                IconButton(icon: const Iconify(Ph.shuffle_fill, size: 24), onPressed: onRepost),
+                if (post.shareCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 16.0, left: 4),
+                    child: Text(formatCount(post.shareCount), style: const TextStyle(fontSize: 13)),
+                  ),
+                IconButton(
+                  icon: Iconify(post.isShared ? Ph.paper_plane_tilt_fill : Ph.paper_plane_tilt, size: 24, color: post.isShared ? Colors.blue : null),
                   onPressed: onShare,
                 ),
               ],
             ),
           ),
 
-          // ✅ Inline comments preview
+          // Inline comments preview
           if (post.comments.isNotEmpty)
             _CommentsPreview(
               comments: post.comments,
               onViewAll: onOpenComments,
+              onReply: (c) => onOpenComments(),
+              onLikeToggle: (c) {},
             ),
         ],
       ),
@@ -479,7 +749,7 @@ class _PostCard extends StatelessWidget {
   }
 }
 
-//Icon 3 dot Popup ——
+// —— Post menu (3 dots) ——
 void _showPostMenu(BuildContext context, _Post post) {
   showModalBottomSheet(
     context: context,
@@ -494,46 +764,18 @@ void _showPostMenu(BuildContext context, _Post post) {
             children: [
               _MenuSection(
                 children: [
-                  _MenuItem(
-                    icon: Icons.download_outlined,
-                    label: 'Save',
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  _MenuItem(
-                    icon: Icons.article_outlined,
-                    label: 'Detail',
-                    onTap: () => Navigator.pop(context),
-                  ),
+                  _MenuItem(iconify: MaterialSymbols.download_rounded, label: 'Save', onTap: () => Navigator.pop(context)),
+                  _MenuItem(iconify: MaterialSymbols.mark_email_unread_outline, label: 'Detail', onTap: () => Navigator.pop(context)),
                 ],
               ),
+              _MenuSection(children: [
+                _MenuItem(iconify: Ph.link_bold, label: 'Copy link', onTap: () => Navigator.pop(context)),
+              ]),
               _MenuSection(
                 children: [
-                  _MenuItem(
-                    icon: Icons.link_outlined,
-                    label: 'Copy link',
-                    onTap: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-              _MenuSection(
-                children: [
-                  _MenuItem(
-                    icon: Icons.notifications_off_outlined,
-                    label: 'Mute',
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  _MenuItem(
-                    icon: Icons.block_outlined,
-                    label: 'Block',
-                    danger: true,
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  _MenuItem(
-                    icon: Icons.report_gmailerrorred_outlined,
-                    label: 'Report',
-                    danger: true,
-                    onTap: () => Navigator.pop(context),
-                  ),
+                  _MenuItem(iconify: Ph.bell, label: 'Mute', onTap: () => Navigator.pop(context)),
+                  _MenuItem(iconify: Ph.prohibit_inset_bold, label: 'Block', danger: true, onTap: () => Navigator.pop(context)),
+                  _MenuItem(iconify: Ph.trash_simple_bold, label: 'Delete', danger: true, onTap: () => Navigator.pop(context)),
                 ],
               ),
             ],
@@ -560,18 +802,18 @@ class _MenuSection extends StatelessWidget {
       child: Column(
         children: List.generate(children.length, (i) {
           final w = children[i];
+          final color = w.danger ? const Color(0xFFEF4444) : Colors.black87;
           return Column(
             children: [
               if (i != 0)
                 const Divider(height: 1, thickness: 0.7, color: Color(0xFFE5E7EB)),
               ListTile(
-                leading: Icon(w.icon, color: w.danger ? const Color(0xFFEF4444) : Colors.black87),
+                leading: w.iconify != null
+                    ? Iconify(w.iconify!, color: color, size: 24)
+                    : Icon(w.icon, color: color),
                 title: Text(
                   w.label,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: w.danger ? const Color(0xFFEF4444) : Colors.black87,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w600, color: color),
                 ),
                 onTap: w.onTap,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16),
@@ -585,16 +827,21 @@ class _MenuSection extends StatelessWidget {
 }
 
 class _MenuItem {
-  final IconData icon;
   final String label;
   final bool danger;
   final VoidCallback onTap;
+
+  // Support either Iconify string or Material icon
+  final String? iconify;
+  final IconData? icon;
+
   const _MenuItem({
-    required this.icon,
     required this.label,
     required this.onTap,
     this.danger = false,
-  });
+    this.iconify,
+    this.icon,
+  }) : assert(iconify != null || icon != null, 'Must provide iconify or icon');
 }
 
 /// ------------------------- Media helpers & layouts -------------------------
@@ -603,9 +850,9 @@ enum CardAspect { auto, vertical, horizontal, square }
 double? _forcedAspectFrom(CardAspect a) {
   switch (a) {
     case CardAspect.vertical:
-      return 4 / 5;
+      return 9 / 14;
     case CardAspect.horizontal:
-      return 16 / 9;
+      return 14 / 9;
     case CardAspect.square:
       return 1 / 1;
     case CardAspect.auto:
@@ -613,26 +860,34 @@ double? _forcedAspectFrom(CardAspect a) {
   }
 }
 
-/// 1 item  -> single edge-to-edge
-/// 2 items -> two-up row
-/// 3+      -> horizontal scroll
+/// Media layout + preview
 class _PostMedia extends StatelessWidget {
   final _Post post;
   const _PostMedia({required this.post});
 
-  static const double _side = 60.0;
-  static const double _gap = 12.0;
-  static const double _minH = 180.0;
+  static const double _side = 100.0;
+  static const double _gap = 8;
+  static const double _minH = 180;
   static const double _maxScreenFraction = 0.55;
+
+  void _openViewerPaged(BuildContext context, int startIndex) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.black.withOpacity(.95),
+        pageBuilder: (_, __, ___) => _MediaViewer(items: post.media, initialIndex: startIndex),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final forcedAspect = _forcedAspectFrom(post.aspect);
 
     return LayoutBuilder(builder: (context, c) {
-      final aspect = forcedAspect ?? 4 / 5;
+      final baseAspect = forcedAspect ?? 9 / 12;
       final contentW = c.maxWidth - _side * 2;
-      final naturalH = contentW / aspect;
+      final naturalH = contentW / baseAspect;
       final maxH = MediaQuery.of(context).size.height * _maxScreenFraction;
       final h = naturalH.clamp(_minH, maxH);
 
@@ -642,21 +897,26 @@ class _PostMedia extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: _side),
           child: SizedBox(
             height: h,
-            child: _RoundedTile(m: m, aspect: aspect),
+            child: _RoundedTile(m: m, aspect: baseAspect, onTap: () => _openViewerPaged(context, 0)),
           ),
         );
       }
 
+      // FIXED: was == 1 twice; this is the 2-tile layout
       if (post.media.length == 2) {
+        const aspect2 = 9 / 14;
+        final perTileW = (contentW - _gap) / 2;
+        final rowH = (perTileW / aspect2).clamp(_minH, maxH);
+
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: _side),
           child: SizedBox(
-            height: h,
+            height: rowH,
             child: Row(
               children: [
-                Expanded(child: _RoundedTile(m: post.media[0], aspect: aspect)),
+                Expanded(child: _RoundedTile(m: post.media[0], aspect: aspect2, onTap: () => _openViewerPaged(context, 0))),
                 const SizedBox(width: _gap),
-                Expanded(child: _RoundedTile(m: post.media[1], aspect: aspect)),
+                Expanded(child: _RoundedTile(m: post.media[1], aspect: aspect2, onTap: () => _openViewerPaged(context, 1))),
               ],
             ),
           ),
@@ -674,8 +934,8 @@ class _PostMedia extends StatelessWidget {
           itemBuilder: (_, i) {
             final m = post.media[i];
             return SizedBox(
-              width: h * aspect,
-              child: _RoundedTile(m: m, aspect: aspect),
+              width: h * baseAspect,
+              child: _RoundedTile(m: m, aspect: baseAspect, onTap: () => _openViewerPaged(context, i)),
             );
           },
         ),
@@ -687,19 +947,24 @@ class _PostMedia extends StatelessWidget {
 class _RoundedTile extends StatelessWidget {
   final _FeedMedia m;
   final double aspect;
-  const _RoundedTile({required this.m, required this.aspect});
+  final VoidCallback? onTap;
+  const _RoundedTile({required this.m, required this.aspect, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(14),
-      child: AspectRatio(
-        aspectRatio: aspect,
-        child: (m.type == MediaType.image)
-            ? (m.isNetwork
-                ? Image.network(m.path, fit: BoxFit.cover)
-                : Image.file(File(m.path), fit: BoxFit.cover))
-            : _CoverVideo(path: m.path, isNetwork: m.isNetwork),
+      child: Material(
+        color: Colors.black12,
+        child: InkWell(
+          onTap: onTap,
+          child: AspectRatio(
+            aspectRatio: aspect,
+            child: (m.type == MediaType.image)
+                ? (m.isNetwork ? Image.network(m.path, fit: BoxFit.cover) : Image.file(File(m.path), fit: BoxFit.cover))
+                : _CoverVideo(path: m.path, isNetwork: m.isNetwork),
+          ),
+        ),
       ),
     );
   }
@@ -708,13 +973,10 @@ class _RoundedTile extends StatelessWidget {
 class FillMedia extends StatelessWidget {
   final _FeedMedia m;
   const FillMedia({required this.m});
-
   @override
   Widget build(BuildContext context) {
     if (m.type == MediaType.image) {
-      return m.isNetwork
-          ? Image.network(m.path, fit: BoxFit.cover)
-          : Image.file(File(m.path), fit: BoxFit.cover);
+      return m.isNetwork ? Image.network(m.path, fit: BoxFit.contain) : Image.file(File(m.path), fit: BoxFit.contain);
     }
     return _CoverVideo(path: m.path, isNetwork: m.isNetwork);
   }
@@ -724,7 +986,6 @@ class _CoverVideo extends StatefulWidget {
   final String path;
   final bool isNetwork;
   const _CoverVideo({required this.path, required this.isNetwork});
-
   @override
   State<_CoverVideo> createState() => _CoverVideoState();
 }
@@ -770,26 +1031,15 @@ class _CoverVideoState extends State<_CoverVideo> {
           child: _ready
               ? FittedBox(
                   fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: _c!.value.size.width,
-                    height: _c!.value.size.height,
-                    child: VideoPlayer(_c!),
-                  ),
+                  child: SizedBox(width: _c!.value.size.width, height: _c!.value.size.height, child: VideoPlayer(_c!)),
                 )
-              : const ColoredBox(
-                  color: Colors.black12,
-                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                ),
+              : const ColoredBox(color: Colors.black12, child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
         ),
         const Positioned.fill(
           child: IgnorePointer(
             child: DecoratedBox(
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [Colors.black26, Colors.transparent],
-                ),
+                gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black26, Colors.transparent]),
               ),
             ),
           ),
@@ -814,139 +1064,59 @@ class _CoverVideoState extends State<_CoverVideo> {
   }
 }
 
-/// ------------------------- Auto-aspect (images/videos) -------------------------
-class _ImageAutoAspect extends StatefulWidget {
-  final String path;
-  final bool isNetwork;
-  const _ImageAutoAspect({required this.path, required this.isNetwork});
-
+/// ======================= FULLSCREEN PAGED VIEWER =======================
+class _MediaViewer extends StatefulWidget {
+  final List<_FeedMedia> items;
+  final int initialIndex;
+  const _MediaViewer({required this.items, required this.initialIndex});
   @override
-  State<_ImageAutoAspect> createState() => _ImageAutoAspectState();
+  State<_MediaViewer> createState() => _MediaViewerState();
 }
 
-class _ImageAutoAspectState extends State<_ImageAutoAspect> {
-  double? _aspect; // width / height
-  @override
-  void initState() {
-    super.initState();
-    final ImageProvider provider =
-        widget.isNetwork ? NetworkImage(widget.path) : FileImage(File(widget.path));
-
-    provider.resolve(const ImageConfiguration()).addListener(
-      ImageStreamListener((ImageInfo info, _) {
-        final w = info.image.width.toDouble();
-        final h = info.image.height.toDouble();
-        if (mounted) setState(() => _aspect = w / h);
-      }),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final aspect = _aspect ?? (4 / 5);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: AspectRatio(
-        aspectRatio: aspect,
-        child: widget.isNetwork
-            ? Image.network(widget.path, fit: BoxFit.cover)
-            : Image.file(File(widget.path), fit: BoxFit.cover),
-      ),
-    );
-  }
-}
-
-class _VideoAutoAspect extends StatefulWidget {
-  final String path;
-  final bool isNetwork;
-  const _VideoAutoAspect({required this.path, required this.isNetwork});
-
-  @override
-  State<_VideoAutoAspect> createState() => _VideoAutoAspectState();
-}
-
-class _VideoAutoAspectState extends State<_VideoAutoAspect> {
-  VideoPlayerController? _c;
-  bool _ready = false;
-  bool _playing = false;
+class _MediaViewerState extends State<_MediaViewer> {
+  late final PageController _pc;
+  late int _index;
 
   @override
   void initState() {
     super.initState();
-    _c = widget.isNetwork
-        ? VideoPlayerController.networkUrl(Uri.parse(widget.path))
-        : VideoPlayerController.file(File(widget.path));
-    _c!.setLooping(true);
-    _c!.initialize().then((_) {
-      if (!mounted) return;
-      setState(() => _ready = true);
-    });
+    _index = widget.initialIndex;
+    _pc = PageController(initialPage: _index);
   }
 
   @override
   void dispose() {
-    _c?.pause();
-    _c?.dispose();
+    _pc.dispose();
     super.dispose();
-  }
-
-  void _toggle() {
-    if (!_ready) return;
-    setState(() {
-      _playing = !_playing;
-      _playing ? _c!.play() : _c!.pause();
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final aspect = _ready ? _c!.value.aspectRatio : (16 / 9);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(14),
-      child: AspectRatio(
-        aspectRatio: aspect,
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
         child: Stack(
           children: [
-            Positioned.fill(
-              child: _ready
-                  ? FittedBox(
-                      fit: BoxFit.cover,
-                      child: SizedBox(
-                        width: _c!.value.size.width,
-                        height: _c!.value.size.height,
-                        child: VideoPlayer(_c!),
-                      ),
-                    )
-                  : const ColoredBox(
-                      color: Colors.black12,
-                      child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                    ),
+            PageView.builder(
+              controller: _pc,
+              onPageChanged: (i) => setState(() => _index = i),
+              itemCount: widget.items.length,
+              itemBuilder: (_, i) => _ViewerPage(item: widget.items[i]),
             ),
-            const Positioned.fill(
-              child: IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [Colors.black26, Colors.transparent],
-                    ),
-                  ),
-                ),
-              ),
+            Positioned(
+              top: 8,
+              left: 8,
+              child: IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
             ),
-            Positioned.fill(
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: _toggle,
-                  child: Center(
-                    child: AnimatedOpacity(
-                      opacity: _playing ? 0.0 : 1.0,
-                      duration: const Duration(milliseconds: 150),
-                      child: const Icon(Icons.play_circle_fill, size: 56, color: Colors.white),
-                    ),
-                  ),
+            Positioned(
+              bottom: 18,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(color: Colors.black.withOpacity(.35), borderRadius: BorderRadius.circular(20)),
+                  child: Text('${_index + 1}/${widget.items.length}', style: const TextStyle(color: Colors.white, fontSize: 13)),
                 ),
               ),
             ),
@@ -957,11 +1127,38 @@ class _VideoAutoAspectState extends State<_VideoAutoAspect> {
   }
 }
 
-/// ======================= HOME BOTTOM BAR =======================
+class _ViewerPage extends StatelessWidget {
+  final _FeedMedia item;
+  const _ViewerPage({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    if (item.type == MediaType.image) {
+      return Center(
+        child: InteractiveViewer(
+          minScale: 1,
+          maxScale: 4,
+          child: item.isNetwork ? Image.network(item.path, fit: BoxFit.contain) : Image.file(File(item.path), fit: BoxFit.contain),
+        ),
+      );
+    }
+    return Center(
+      child: AspectRatio(aspectRatio: 14 / 9, child: _CoverVideo(path: item.path, isNetwork: item.isNetwork)),
+    );
+  }
+}
+
+/// ======================= BOTTOM BAR =======================
 class _BottomBar extends StatelessWidget {
   final VoidCallback onAdd;
+  final VoidCallback onReels; // Open Reel
   final VoidCallback onProfile;
-  const _BottomBar({required this.onAdd, required this.onProfile});
+
+  const _BottomBar({
+    required this.onAdd,
+    required this.onReels,
+    required this.onProfile,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -975,9 +1172,22 @@ class _BottomBar extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           const _BarIcon(icon: MaterialSymbols.home_outline_rounded),
-          const _BarIcon(icon: Ion.search),
-          _AddButton(onTap: onAdd),
-          const _BarIcon(icon: Ph.heart),
+          _BarIcon(
+            icon: Ion.search,
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const FollowSuggestionsPage(),
+                ),
+              );
+            },
+          ),
+          _AddButton(onTap: onAdd), // Upload media
+          _BarIcon(
+            icon: Ph.skip_forward_circle_light,
+            onTap: onReels, // Navigate to ReelsPage
+          ),
           _BarIcon(icon: Gg.profile, onTap: onProfile),
         ],
       ),
@@ -995,11 +1205,8 @@ class _AddButton extends StatelessWidget {
       child: Container(
         width: 44,
         height: 44,
-        decoration: BoxDecoration(
-          color: const Color(0xFF5B6BFF),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: const Icon(Icons.add, color: Colors.white),
+        decoration: BoxDecoration(color: const Color(0xFF5B6BFF), borderRadius: BorderRadius.circular(10)),
+        child: const Icon(Icons.add, color: Color.fromARGB(255, 255, 255, 255)),
       ),
     );
   }
@@ -1012,14 +1219,11 @@ class _BarIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: onTap,
-      icon: Iconify(icon, color: const Color.fromARGB(221, 87, 86, 86), size: 30),
-    );
+    return IconButton(onPressed: onTap, icon: Iconify(icon, color: const Color.fromARGB(221, 87, 86, 86), size: 30));
   }
 }
 
-/// ======================= UPLOAD PAGE (no popup) =======================
+/// ======================= UPLOAD PAGE =======================
 class UploadPostPage extends StatefulWidget {
   const UploadPostPage({super.key});
   @override
@@ -1071,7 +1275,7 @@ class _UploadPostPageState extends State<UploadPostPage> {
   @override
   Widget build(BuildContext context) {
     final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(28),
       borderSide: const BorderSide(color: Color(0xFFE8E8E8)),
     );
 
@@ -1081,91 +1285,62 @@ class _UploadPostPageState extends State<UploadPostPage> {
           slivers: [
             SliverToBoxAdapter(
               child: Container(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
-                decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: Color(0xFFEFEFEF))),
-                ),
+                padding: const EdgeInsets.fromLTRB(16, 48, 16, 12),
+                decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: Color(0xFFEFEFEF)))),
                 child: const Center(
-                  child: Text(
-                    'iFeed',
-                    style: TextStyle(
-                      color: Color(0xFF22C55E),
-                      fontWeight: FontWeight.w800,
-                      fontSize: 24,
-                    ),
-                  ),
+                  child: Text('iFeed', style: TextStyle(color: Color(0xFF22C55E), fontWeight: FontWeight.w800, fontSize: 30)),
                 ),
               ),
             ),
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 19, vertical: 8),
                 child: Column(
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-                        IconButton(onPressed: () {}, icon: const Icon(Icons.more_horiz)),
                       ],
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     const Row(
                       children: [
-                        CircleAvatar(
-                          radius: 18,
-                          backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=68'),
-                        ),
-                        SizedBox(width: 10),
-                        Text('sinayun_xyn', style: TextStyle(fontWeight: FontWeight.w600)),
+                        CircleAvatar(radius: 25, backgroundImage: NetworkImage('')),
+                        SizedBox(width: 15),
+                        Text('sinayun_xyn', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 18)),
                         Spacer(),
-                        Text('Share a new iFeed', style: TextStyle(color: Colors.black54, fontSize: 12)),
+                        Text('Share a new iFeed', style: TextStyle(color: Colors.black54, fontSize: 18)),
                       ],
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 15),
                     TextField(
                       controller: _text,
                       onChanged: (_) => setState(() {}),
-                      maxLines: 4,
+                      maxLines: 1,
                       decoration: InputDecoration(
                         hintText: 'Write something ...',
                         isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 19, vertical: 12),
                         border: border,
                         enabledBorder: border,
-                        focusedBorder: border.copyWith(
-                          borderSide: const BorderSide(color: Color(0xFFB4E3C7)),
-                        ),
+                        focusedBorder: border.copyWith(borderSide: const BorderSide(color: Color.fromARGB(255, 17, 21, 223))),
                       ),
                     ),
                     const SizedBox(height: 12),
                     Row(
                       children: [
-                        IconButton(
-                          tooltip: 'Media',
-                          onPressed: _pickMultipleMedia,
-                          icon: const Icon(Icons.image_outlined),
-                        ),
-                        IconButton(
-                          tooltip: 'Camera (demo)',
-                          onPressed: _pickImage,
-                          icon: const Icon(Icons.photo_camera_outlined),
-                        ),
+                        IconButton(tooltip: 'Media', onPressed: _pickMultipleMedia, icon: const Iconify(Tabler.photo_plus, color: Colors.blue)),
+                        IconButton(tooltip: 'Camera (demo)', onPressed: _pickImage, icon: const Iconify(Ph.camera)),
                         IconButton(
                           tooltip: 'Location',
-                          onPressed: () => setState(
-                            () => _location = _location == null ? 'Phnom Penh' : null,
-                          ),
-                          icon: const Icon(Icons.location_on_outlined),
+                          onPressed: () => setState(() => _location = _location == null ? 'Phnom Penh' : null),
+                          icon: const Iconify(MaterialSymbols.add_location_alt, color: Colors.black54),
                         ),
                       ],
                     ),
-                    if (_media.isNotEmpty)
-                      _PreviewWrap(
-                        media: _media,
-                        onRemove: (i) => setState(() => _media.removeAt(i)),
-                      ),
-                    const SizedBox(height: 28),
+                    if (_media.isNotEmpty) _PreviewWrap(media: _media, onRemove: (i) => setState(() => _media.removeAt(i))),
+                    const SizedBox(height: 400),
                     Row(
                       children: [
                         const Text('Add a caption', style: TextStyle(color: Colors.black54)),
@@ -1243,14 +1418,12 @@ class _Post {
   final List<_FeedMedia> media;
   final CardAspect aspect;
 
-  // social counts/state
   int likeCount;
   int commentCount;
-  int shareCount; // used as "reposts"
+  int shareCount; // reposts
   bool isLiked;
   bool isShared;
 
-  // ✅ stored comments for preview + persistence
   List<reply.Comment> comments;
 
   _Post({
@@ -1270,10 +1443,9 @@ class _Post {
   }) : comments = comments ?? <reply.Comment>[];
 }
 
-final _names = ["sinayun_xyn", "tyda-one", "kunthear_kh", "back_tow", "dara.kh", "raa.kh"];
+final _names = ["tyda-one", "kunthear_kh", "back_tow", "dara.kh", "raa.kh"];
 
 final _avatars = [
-  "https://i.pravatar.cc/150?img=32",
   "https://i.pravatar.cc/150?img=47",
   "https://i.pravatar.cc/150?img=12",
   "https://i.pravatar.cc/150?img=5",
@@ -1299,7 +1471,7 @@ class _PreviewWrap extends StatelessWidget {
         runSpacing: gap,
         children: List.generate(media.length, (i) {
           final m = media[i];
-          final aspect = m.type == MediaType.image ? 4 / 5 : 16 / 9;
+          final aspect = m.type == MediaType.image ? 9 / 16 : 4 / 5;
           return Stack(
             children: [
               SizedBox(
@@ -1307,7 +1479,7 @@ class _PreviewWrap extends StatelessWidget {
                 child: AspectRatio(
                   aspectRatio: aspect,
                   child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
+                    borderRadius: BorderRadius.circular(10),
                     child: m.type == MediaType.image
                         ? Image.file(m.file, fit: BoxFit.cover)
                         : const ColoredBox(color: Colors.black12),
@@ -1320,12 +1492,9 @@ class _PreviewWrap extends StatelessWidget {
                 child: InkWell(
                   onTap: () => onRemove(i),
                   child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(.50),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+                    decoration: BoxDecoration(color: Colors.black.withOpacity(.50), borderRadius: BorderRadius.circular(20)),
                     padding: const EdgeInsets.all(3),
-                    child: const Icon(Icons.close, color: Colors.white, size: 16),
+                    child: const Icon(Icons.close, color: Colors.white, size: 26),
                   ),
                 ),
               ),
@@ -1334,5 +1503,68 @@ class _PreviewWrap extends StatelessWidget {
         }),
       );
     });
+  }
+}
+
+/// ======================= STORY VIEWER =======================
+class StoryViewer extends StatefulWidget {
+  const StoryViewer({super.key, required this.story});
+  final Story story;
+
+  @override
+  State<StoryViewer> createState() => _StoryViewerState();
+}
+
+class _StoryViewerState extends State<StoryViewer> {
+  VideoPlayerController? _vc;
+
+  @override
+  void initState() {
+    super.initState();
+    final s = widget.story;
+    if (s.isVideo && s.isLocal && s.mediaPath != null) {
+      _vc = VideoPlayerController.file(File(s.mediaPath!))
+        ..setLooping(true)
+        ..initialize().then((_) {
+          if (!mounted) return;
+          setState(() {});
+          _vc?.play();
+        });
+    }
+  }
+
+  @override
+  void dispose() {
+    _vc?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.story;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          Center(
+            child: s.isVideo
+                ? (_vc != null && _vc!.value.isInitialized)
+                    ? AspectRatio(aspectRatio: _vc!.value.aspectRatio, child: VideoPlayer(_vc!))
+                    : const SizedBox.shrink()
+                : s.isLocal && s.mediaPath != null
+                    ? Image.file(File(s.mediaPath!), fit: BoxFit.contain)
+                    : (s.coverUrl != null ? Image.network(s.coverUrl!, fit: BoxFit.contain) : const SizedBox.shrink()),
+          ),
+          SafeArea(
+            child: Row(
+              children: [
+                IconButton(icon: const Icon(Icons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
+                Text(s.name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
