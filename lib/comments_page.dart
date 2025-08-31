@@ -455,7 +455,7 @@ class _ReplyPostMedia extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const double aspect = 9 / 13;
+    const double aspect = 9 / 12;
 
     return LayoutBuilder(builder: (context, c) {
       final contentW = c.maxWidth - _side * 3;
@@ -463,7 +463,7 @@ class _ReplyPostMedia extends StatelessWidget {
       final maxH = MediaQuery.of(context).size.height * _maxScreenFraction;
       final h = naturalH.clamp(_minH, maxH);
 
-      if (items.length == 3) {
+      if (items.length == 1) {
         final m = items.first;
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: _side),
@@ -471,7 +471,7 @@ class _ReplyPostMedia extends StatelessWidget {
         );
       }
 
-      if (items.length == 3) {
+      if (items.length == 1) {
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: _side),
           child: SizedBox(

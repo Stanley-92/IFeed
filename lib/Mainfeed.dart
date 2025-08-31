@@ -885,7 +885,7 @@ class _PostMedia extends StatelessWidget {
     final forcedAspect = _forcedAspectFrom(post.aspect);
 
     return LayoutBuilder(builder: (context, c) {
-      final baseAspect = forcedAspect ?? 9 / 12;
+      final baseAspect = forcedAspect ?? 9 / 10;
       final contentW = c.maxWidth - _side * 2;
       final naturalH = contentW / baseAspect;
       final maxH = MediaQuery.of(context).size.height * _maxScreenFraction;
@@ -903,8 +903,8 @@ class _PostMedia extends StatelessWidget {
       }
 
       // FIXED: was == 1 twice; this is the 2-tile layout
-      if (post.media.length == 2) {
-        const aspect2 = 9 / 14;
+      if (post.media.length == 1) {
+        const aspect2 = 9 / 13;
         final perTileW = (contentW - _gap) / 2;
         final rowH = (perTileW / aspect2).clamp(_minH, maxH);
 

@@ -4,11 +4,46 @@ import 'package:iconify_flutter/icons/ph.dart';
 import 'package:iconify_flutter/icons/ion.dart';
 import 'package:iconify_flutter/icons/material_symbols.dart';
 import 'package:iconify_flutter/icons/fa.dart';
-import 'package:iconify_flutter/icons/mdi.dart'; // ✅ added (for Mdi.account_outline)
-import 'package:iconify_flutter/icons/majesticons.dart';
+import 'package:iconify_flutter/icons/gg.dart';       // ✅ match Mainfeed bottom bar
+import 'package:iconify_flutter/icons/mdi.dart';
+
+import 'suggestions_page.dart';                       // Search page
+import 'reel_page.dart';                              // Reels page
+import 'mainfeed.dart' show UploadPostPage,           // Use Upload composer from Mainfeed
+                             MainfeedScreen;          // For Home navigation
 
 class ProfileUserScreen extends StatelessWidget {
   const ProfileUserScreen({super.key});
+
+  // ---------- helpers to match Mainfeed ----------
+  void _goHome(BuildContext context) {
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const MainfeedScreen()),
+      (route) => false,
+    );
+  }
+
+  void _openSearch(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const FollowSuggestionsPage()),
+    );
+  }
+
+  void _openComposer(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const UploadPostPage()),
+    );
+  }
+
+  void _openReels(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const ReelsPage()),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +59,6 @@ class ProfileUserScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // App name
                   const Text(
                     'iFeed',
                     style: TextStyle(
@@ -35,8 +69,6 @@ class ProfileUserScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 10),
-
-                  // Username + actions + avatar
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
@@ -59,41 +91,30 @@ class ProfileUserScreen extends StatelessWidget {
                                 color: Color.fromARGB(137, 19, 16, 16),
                               ),
                             ),
-                          ],      
+                          ],
                         ),
                       ),
-                      IconButton(icon: const Iconify(Fa.edit, size: 24), onPressed:(){}),
-                      IconButton(icon: const Iconify(Ph.heart_bold, size: 28), onPressed:(){}),
+                      IconButton(icon: const Iconify(Fa.edit, size: 24), onPressed: () {}),
+                      IconButton(icon: const Iconify(Ph.heart_bold, size: 28), onPressed: () {}),
                       const CircleAvatar(
                         radius: 38,
-                        backgroundImage: NetworkImage(
-                          'https://i.pravatar.cc/150?img=68',
-                        ),
+                        backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=68'),
                       ),
                     ],
                   ),
-
                   const SizedBox(height: 12),
-
-                  // Bio
                   const Text(
                     'Life is Good alway bring you a nice\none way to heaven',
-                    style: TextStyle(
-                    fontSize: 18,
-                    color: Color.fromARGB(134, 0, 0, 0),)
+                    style: TextStyle(fontSize: 18, color: Color.fromARGB(134, 0, 0, 0)),
                   ),
                   const SizedBox(height: 8),
-
-                  // Stats
                   Row(
                     children: const [
                       _SmallStat(label: '11k Follower'),
                       SizedBox(width: 18),
                       _SmallStat(label: 'joined 2017'),
                     ],
-                    
                   ),
-
                   const SizedBox(height: 58),
                 ],
               ),
@@ -128,7 +149,6 @@ class ProfileUserScreen extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Envelope icon
                     Container(
                       width: 128,
                       height: 92,
@@ -143,18 +163,12 @@ class ProfileUserScreen extends StatelessWidget {
                     const SizedBox(height: 28),
                     const Text(
                       "Now you're all up here !",
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 28,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 28),
                     ),
                     const SizedBox(height: 28),
                     const Text(
                       'Start new conversation by creating a post',
-                      style: TextStyle(
-                        fontSize: 15,
-                        color: Colors.black54,
-                      ),
+                      style: TextStyle(fontSize: 15, color: Colors.black54),
                     ),
                     const SizedBox(height: 8),
                     FilledButton(
@@ -163,9 +177,7 @@ class ProfileUserScreen extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                       ),
-                      onPressed: () {
-                        // TODO: open your UploadPost page
-                      },
+                      onPressed: () => _openComposer(context),
                       child: const Text('Create post'),
                     ),
                   ],
@@ -176,23 +188,21 @@ class ProfileUserScreen extends StatelessWidget {
         ),
       ),
 
-      // ---------- Bottom Bar ----------
+      // ---------- Bottom Bar (EXACT like Mainfeed) ----------
       bottomNavigationBar: Container(
-        height: 64,
-        decoration: BoxDecoration(
+        height: 68,
+        decoration: const BoxDecoration(
           color: Colors.white,
-          border: Border(top: BorderSide(color: Colors.black.withOpacity(.06))),
+          border: Border(top: BorderSide(color: Color(0xffe5e7eb))),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _BottomItem(icon: MaterialSymbols.home_outline_rounded, onTap: () {}),
-            _BottomItem(icon: Ion.search, onTap: () {}),
-            _MiddleAdd(onTap: () {
-                                                                                               // TODO: open composer
-            }),
-            _BottomItem(icon: Ph.heart_bold, onTap: () {}),
-            _BottomItem(icon: Mdi.account_outline, onTap: () {}), // ✅ profile icon matches mainfeed
+            _BarIcon(icon: MaterialSymbols.home_outline_rounded, onTap: () => _goHome(context)),
+            _BarIcon(icon: Ion.search, onTap: () => _openSearch(context)),
+            _AddButton(onTap: () => _openComposer(context)),
+            _BarIcon(icon: Ph.skip_forward_circle_light, onTap: () => _openReels(context)),
+            _BarIcon(icon: Gg.profile, onTap: () {/* already here */}),
           ],
         ),
       ),
@@ -200,29 +210,37 @@ class ProfileUserScreen extends StatelessWidget {
   }
 }
 
-// ======= small widgets =======
+// ======= small widgets (matching Mainfeed) =======
 
-class IconChip extends StatelessWidget {
-  final String icon; 
-  final String? tooltip;
-  final VoidCallback onTap;
-  const IconChip({required this.icon, this.tooltip, required this.onTap});
+class _BarIcon extends StatelessWidget {
+  final String icon;
+  final VoidCallback? onTap;
+  const _BarIcon({required this.icon, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xfff1f5f9),
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Tooltip(
-            message: tooltip ?? '',
-            child: Iconify(icon, size: 20, color: Colors.black87),
-          ),
+    return IconButton(
+      onPressed: onTap,
+      icon: Iconify(icon, color: const Color.fromARGB(221, 87, 86, 86), size: 30),
+    );
+  }
+}
+
+class _AddButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _AddButton({required this.onTap});
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: const Color(0xFF5B6BFF),
+          borderRadius: BorderRadius.circular(10),
         ),
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
@@ -234,10 +252,7 @@ class _SmallStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: const TextStyle(fontSize: 11.5, color: Colors.black54),
-    );
+    return Text(label, style: const TextStyle(fontSize: 11.5, color: Colors.black54));
   }
 }
 
@@ -270,50 +285,6 @@ class _TabText extends StatelessWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-class _BottomItem extends StatelessWidget {
-  final String icon;
-  final VoidCallback onTap;
-  const _BottomItem({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: onTap,
-      icon: Iconify(icon, size: 26, color: const Color(0xCC2f2f2f)),
-    );
-  }
-}
-
-class _MiddleAdd extends StatelessWidget {
-  final VoidCallback onTap;
-  const _MiddleAdd({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: const Color(0xffb7f0c3),
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(.06),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: const Center(
-          child: Iconify(Ph.plus, size: 22, color: Color(0xff15803d)),
-        ),
-      ),
     );
   }
 }
