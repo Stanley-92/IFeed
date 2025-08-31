@@ -12,7 +12,7 @@ class LoginScreen extends StatelessWidget {
       backgroundColor: Colors.pink[50],
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(16.0),
+          padding: const EdgeInsets.all(58.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
@@ -21,10 +21,10 @@ class LoginScreen extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 48,
                   fontWeight: FontWeight.bold,
-                  color: Colors.green[700],
+                  color: Colors.green[500],
                 ),
               ),
-              SizedBox(height: 40),
+              SizedBox(height: 30),
               TextField(
                 controller: emailController,
                 decoration: InputDecoration(

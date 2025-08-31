@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:ifeed/profile.dart';
 import 'Mainfeed.dart';
 
 class VerifyScreen extends StatefulWidget {
   @override
-  _VerifyScreenState createState() => _VerifyScreenState();
+  VerifyScreenState createState() => VerifyScreenState();
 }
 
-class _VerifyScreenState extends State<VerifyScreen> {
-  List<TextEditingController> _controllers = List.generate(5, (index) => TextEditingController());
+class VerifyScreenState extends State<VerifyScreen> {
+  List<TextEditingController> controllers = List.generate(5, (index) => TextEditingController());
   final String _expectedCode = "12345"; // Hardcoded expected code for demo; replace with API or dynamic value
   bool _isVerifying = false;
 
   @override
   void dispose() {
-    for (var controller in _controllers) {
+    for (var controller in controllers) {
       controller.dispose();
     }
     super.dispose();
@@ -23,7 +24,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
     setState(() {
       _isVerifying = true;
     });
-    String enteredCode = _controllers.map((controller) => controller.text).join();
+    String enteredCode = controllers.map((controller) => controller.text).join();
     if (enteredCode == _expectedCode) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Verification Successful!')),
@@ -32,7 +33,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
 
 Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (context) => MainfeedScreen ()),
+      MaterialPageRoute(builder: (context) => ProfileUserScreen ()),
     );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -88,7 +89,7 @@ Navigator.pushReplacement(
                       ),
                       SizedBox(height: 20),
                       Text(
-                        "We've sent a code to leystan405@gmail.com",
+                        "We've sent a code: to leystan405@gmail.com",
                         style: TextStyle(
                           fontSize: 16,
                           color: Colors.grey[600],
@@ -104,7 +105,7 @@ Navigator.pushReplacement(
                               width: 40,
                               height: 40,
                               child: TextField(
-                                controller: _controllers[index],
+                                controller: controllers[index],
                                 textAlign: TextAlign.center,
                                 keyboardType: TextInputType.number,
                                 maxLength: 1,

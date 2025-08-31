@@ -57,6 +57,8 @@ class Comment {
   });
 }
 
+
+
 /// ─────────────── CommentsPage ───────────────
 class CommentsPage extends StatefulWidget {
   const CommentsPage({
@@ -67,7 +69,9 @@ class CommentsPage extends StatefulWidget {
     required this.postText,
     required this.postMedia,
     this.initialComments = const <Comment>[],
-    this.showAvatars = true,   // default ON
+    this.showAvatars = true,
+    required this.currentUserName,
+    required this.currentUserAvatar,
   });
 
   final String postAuthorName;
@@ -77,6 +81,8 @@ class CommentsPage extends StatefulWidget {
   final List<PostMedia> postMedia;
   final List<Comment> initialComments;
   final bool showAvatars;
+  final String currentUserName;
+  final String currentUserAvatar;
 
   @override
   State<CommentsPage> createState() => _CommentsPageState();
@@ -148,8 +154,8 @@ class _CommentsPageState extends State<CommentsPage> {
 
     final node = _CommentNode(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
-      userName: 'you',
-      avatar: 'https://i.pravatar.cc/100?img=32',
+      userName: widget.currentUserName,
+      avatar: widget.currentUserAvatar,
       time: 'now',
       text: text,
       isReply: _replyTo != null,
@@ -173,7 +179,7 @@ class _CommentsPageState extends State<CommentsPage> {
     final bottom = MediaQuery.of(context).padding.bottom;
 
     final authorAvatar = widget.postAuthorAvatar;
-    final authorName = widget.postAuthorName;
+    final authorName = widget.postAuthorName;     
     final postTime = widget.postTimeText;
     final hasCaption = widget.postText.trim().isNotEmpty;
     final hasMedia = widget.postMedia.isNotEmpty;
@@ -202,25 +208,30 @@ class _CommentsPageState extends State<CommentsPage> {
         ),
         body: Column(
           children: [
-            // ─── Post header (LEFT-aligned like feed) ───
+
+
+
+
+ // ─── Post header (LEFT-aligned like feed) ───
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              padding: const EdgeInsets.fromLTRB(48, 1, 16, 10),
               color: Colors.white,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // author
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (widget.showAvatars) ...[
                         CircleAvatar(
-                          radius: 18,
+                          radius: 25,
                           backgroundImage: _avatarProvider(authorAvatar),
                           onBackgroundImageError: (_, __) {},
                           backgroundColor: Colors.grey.shade200,
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 18),
                       ],
                       Expanded(
                         child: Column(
@@ -229,16 +240,18 @@ class _CommentsPageState extends State<CommentsPage> {
                             if (authorName.isNotEmpty)
                               Text(authorName,
                                   style: const TextStyle(
-                                      fontSize: 13, fontWeight: FontWeight.w700)),
+                                      fontSize: 18, fontWeight: FontWeight.w700)),
                             if (postTime.isNotEmpty)
                               Text(postTime,
                                   style: const TextStyle(
-                                      fontSize: 11, color: Colors.black54)),
+                                      fontSize: 13, color: Color.fromARGB(137, 17, 17, 17))),
                           ],
                         ),
                       ),
                     ],
                   ),
+
+// caption
                   if (hasCaption) ...[
                     const SizedBox(height: 8),
                     Padding(
@@ -259,13 +272,15 @@ class _CommentsPageState extends State<CommentsPage> {
                       ),
                     ),
                   ],
+
+// media
                   if (hasMedia) ...[
-                    const SizedBox(height: 10),
-                    _ReplyPostMedia(items: widget.postMedia), // feed-like layout
+                    const SizedBox(height: 8), // reduced gap under media vs. before
+                    _ReplyPostMedia(items: widget.postMedia),
                   ],
 
                   // ─── Actions row (same icons as feed) ───
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(48, 0, 18, 0), // match feed padding
                     child: Row(
@@ -285,39 +300,49 @@ class _CommentsPageState extends State<CommentsPage> {
                             });
                           },
                         ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _fmt(_headerLikes),
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: _headerLiked ? Colors.red : Colors.black54,
+                        if (_headerLikes > 0) ...[
+                          const SizedBox(width: 4),
+                          Text(
+                            _fmt(_headerLikes),
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: _headerLiked ? Colors.red : Colors.black54,
+                            ),
                           ),
-                        ),
+                        ],
 
-                        const SizedBox(width: 16),
 
-                        // Comments count (non-click, icon for parity)
+
+const SizedBox(width: 15),
+// Comments count (only if > 0)
                         const Iconify(Uil.comment, size: 24),
-                        const SizedBox(width: 4),
-                        Text(_fmt(_headerComments), style: const TextStyle(fontSize: 13)),
+                        if (_headerComments > 0) ...[
+                          const SizedBox(width: 4),
+                          Text(_fmt(_headerComments),
+                              style: const TextStyle(fontSize: 13)),
+                        ],
 
                         const SizedBox(width: 16),
 
-                        // Repost (shuffle) — bumps reposts
+
+
+ // Repost (shuffle)
                         IconButton(
-                          icon: const Iconify(Ph.shuffle_fill, size: 24),
+                          icon: const Iconify(Ph.shuffle_fill, size: 25),
                           onPressed: () => setState(() => _headerReposts++),
                         ),
-                        const SizedBox(width: 4),
-                        Text(_fmt(_headerReposts), style: const TextStyle(fontSize: 13)),
+                        if (_headerReposts > 0) ...[
+                          const SizedBox(width: 4),
+                          Text(_fmt(_headerReposts),
+                              style: const TextStyle(fontSize: 13)),
+                        ],
 
-                        const SizedBox(width: 16),
-
-                        // Send/Share (paper-plane) — toggle highlight only
+                        const SizedBox(width: 15),
+ // Send/Share (paper-plane) — toggle highlight only
                         IconButton(
                           icon: Iconify(
                             _headerShared ? Ph.paper_plane_tilt_fill : Ph.paper_plane_tilt,
-                            size: 24,
+                            size: 25,
                             color: _headerShared ? Colors.blue : null,
                           ),
                           onPressed: () => setState(() => _headerShared = !_headerShared),
@@ -329,15 +354,16 @@ class _CommentsPageState extends State<CommentsPage> {
               ),
             ),
 
-            // ─── Comments list ───
+
+ // ─── Comments list ───
             Expanded(
               child: ListView(
                 controller: _scroll,
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                padding: const EdgeInsets.fromLTRB(28, 8, 16, 16),
                 children: [
                   if (_comments.isEmpty)
                     const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20.0),
+                      padding: EdgeInsets.symmetric(vertical: 16.0),
                       child: Text(
                         'No comments yet. Be the first to reply!',
                         textAlign: TextAlign.center,
@@ -358,7 +384,9 @@ class _CommentsPageState extends State<CommentsPage> {
               ),
             ),
 
-            // ─── Input bar ───
+
+
+  // ─── Input bar ───
             Container(
               padding: EdgeInsets.fromLTRB(12, 8, 12, 8 + bottom),
               decoration: const BoxDecoration(
@@ -369,8 +397,8 @@ class _CommentsPageState extends State<CommentsPage> {
                 children: [
                   if (widget.showAvatars) ...[
                     CircleAvatar(
-                      radius: 16,
-                      backgroundImage: _avatarProvider('https://i.pravatar.cc/100?img=32'),
+                      radius: 20,
+                      backgroundImage: _avatarProvider(widget.currentUserAvatar),
                       onBackgroundImageError: (_, __) {},
                     ),
                     const SizedBox(width: 8),
@@ -412,27 +440,30 @@ class _CommentsPageState extends State<CommentsPage> {
   }
 }
 
+
+
+
 /// ───────── Reply post media (same rules as feed) ─────────
 class _ReplyPostMedia extends StatelessWidget {
   const _ReplyPostMedia({required this.items});
   final List<PostMedia> items;
 
   static const double _side = 60.0;            // same as feed
-  static const double _gap  = 12.0;
-  static const double _minH = 180.0;
+  static const double _gap  = 10;
+  static const double _minH = 180;
   static const double _maxScreenFraction = 0.55;
 
   @override
   Widget build(BuildContext context) {
-    const double aspect = 4 / 5;
+    const double aspect = 9 / 13;
 
     return LayoutBuilder(builder: (context, c) {
-      final contentW = c.maxWidth - _side * 2;
+      final contentW = c.maxWidth - _side * 3;
       final naturalH = contentW / aspect;
       final maxH = MediaQuery.of(context).size.height * _maxScreenFraction;
       final h = naturalH.clamp(_minH, maxH);
 
-      if (items.length == 1) {
+      if (items.length == 3) {
         final m = items.first;
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: _side),
@@ -440,7 +471,7 @@ class _ReplyPostMedia extends StatelessWidget {
         );
       }
 
-      if (items.length == 2) {
+      if (items.length == 3) {
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: _side),
           child: SizedBox(
@@ -608,6 +639,7 @@ class _ReplyFillMediaState extends State<_ReplyFillMedia> {
   }
 }
 
+
 /// ───────── Internal node + mapping helpers ─────────
 class _CommentNode {
   final String id;
@@ -669,12 +701,15 @@ class _CommentTile extends StatelessWidget {
     super.key,
   });
 
+
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final leftPad = comment.isReply ? 5.0 : 0.0;
+    final leftPad = comment.isReply ? 2.0 : 58.0;
+
     return Padding(
-      padding: EdgeInsets.fromLTRB(leftPad, 5, 0, 2),
+      padding: EdgeInsets.fromLTRB(leftPad, 8, 8, 2),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -683,7 +718,7 @@ class _CommentTile extends StatelessWidget {
             children: [
               if (showAvatars) ...[
                 CircleAvatar(
-                  radius: 14,
+                  radius: 20,
                   backgroundImage: _avatarProvider(comment.avatar),
                   onBackgroundImageError: (_, __) {},
                 ),
@@ -712,22 +747,42 @@ class _CommentTile extends StatelessWidget {
                     const SizedBox(height: 6),
                     Text(comment.text),
                     const SizedBox(height: 6),
+
+
+
+
+
+
+// under every comment/reply
                     Row(
                       children: [
                         IconButton(
-                          icon: Icon(
-                            comment.liked ? Icons.favorite : Icons.favorite_border,
-                            size: 20,
-                            color: comment.liked ? Colors.red : null,
+                          icon: Iconify(Ph.heart_bold,size: 20,
+                          color: comment.liked ? Colors.red : null,
                           ),
                           onPressed: onLikeToggle,
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                         ),
+
                         const SizedBox(width: 10),
                         IconButton(
                           icon: const Iconify(Uil.comment, size: 20),
                           onPressed: () => onReply(comment),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+
+                        
+                           IconButton(
+                          icon: const Iconify(Ph.shuffle_light, size: 20),
+                          onPressed: (){},
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                        IconButton(
+                          icon: const Iconify(Ph.paper_plane_tilt_light, size: 20),
+                          onPressed: () {},
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
                         ),
@@ -738,6 +793,10 @@ class _CommentTile extends StatelessWidget {
               ),
             ],
           ),
+
+
+
+          // collapse/expand for children
           if (comment.replies.isNotEmpty && !comment.expanded)
             Padding(
               padding: EdgeInsets.only(left: (showAvatars ? 24 : 0) + leftPad, top: 2),
@@ -750,6 +809,7 @@ class _CommentTile extends StatelessWidget {
                 child: Text('Show ${comment.replies.length} replies…'),
               ),
             ),
+
           if (comment.expanded)
             ...comment.replies.map(
               (r) => _CommentTile(

@@ -3,10 +3,6 @@ import 'package:iconify_flutter/iconify_flutter.dart';
 import 'package:iconify_flutter/icons/material_symbols.dart';
 import 'package:iconify_flutter/icons/ph.dart';
 
-
-
-
-
 /// ======================= CHAT SCREEN =======================
 class Chat extends StatefulWidget {
   const Chat({
@@ -26,31 +22,20 @@ class _ChatState extends State<Chat> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scroll = ScrollController();
 
-  final List<ChatMessage> _messages = [
-    ChatMessage(
-      id: 'm0',
-      fromMe: false,
-      text: 'When do you arrive ?',
-      timestampLabel: 'Today · 5:46 PM',
-    ),
-    ChatMessage(
-      id: 'm1',
-      fromMe: true,
-      imageUrl:
-          '',
-    ),
-    ChatMessage(
-      id: 'm2',
-      fromMe: true,
-      text: 'When do you arrive ?',
-    ),
-  ];
+  /// Start with an empty chat
+  final List<ChatMessage> _messages = [];
 
   void _send() {
     final text = _controller.text.trim();
     if (text.isEmpty) return;
     setState(() {
-      _messages.add(ChatMessage(id: UniqueKey().toString(), fromMe: true, text: text));
+      _messages.add(
+        ChatMessage(
+          id: UniqueKey().toString(),
+          fromMe: true,
+          text: text,
+        ),
+      );
       _controller.clear();
     });
     _scrollToBottom();
@@ -99,34 +84,36 @@ class _ChatState extends State<Chat> {
             ),
             const Divider(height: 1),
             Expanded(
-              child: ListView.builder(
-                controller: _scroll,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                itemCount: _messages.length,
-                itemBuilder: (context, i) {
-                  final m = _messages[i];
-                  return Column(
-                    children: [
-                      if (m.timestampLabel != null) ...[
-                        const SizedBox(height: 6),
-                        Text(
-                          m.timestampLabel!,
-                          style: const TextStyle(fontSize: 11, color: Colors.grey),
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                      Align(
-                        alignment: m.fromMe ? Alignment.centerRight : Alignment.centerLeft,
-                        child: MessageBubble(message: m),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                  );
-                },
-              ),
+              child: _messages.isEmpty
+                  ? const _EmptyState()
+                  : ListView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      itemCount: _messages.length,
+                      itemBuilder: (context, i) {
+                        final m = _messages[i];
+                        return Column(
+                          children: [
+                            if (m.timestampLabel != null) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                m.timestampLabel!,
+                                style: const TextStyle(fontSize: 11, color: Colors.grey),
+                              ),
+                              const SizedBox(height: 8),
+                            ],
+                            Align(
+                              alignment:
+                                  m.fromMe ? Alignment.centerRight : Alignment.centerLeft,
+                              child: MessageBubble(message: m),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                        );
+                      },
+                    ),
             ),
 
-        
             // Composer
             Container(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
@@ -153,7 +140,7 @@ class _ChatState extends State<Chat> {
                       ),
                       child: Row(
                         children: [
-                          Expanded( 
+                          Expanded(
                             child: TextField(
                               controller: _controller,
                               minLines: 1,
@@ -222,7 +209,7 @@ class _Header extends StatelessWidget {
       child: Row(
         children: [
           IconButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.maybePop(context),
             icon: const Icon(Icons.arrow_back_ios_new),
             splashRadius: 20,
           ),
@@ -232,11 +219,15 @@ class _Header extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(contactName,
-                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                Text(
+                  contactName,
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                ),
                 const SizedBox(height: 2),
-                const Text('Active 27m ago',
-                    style: TextStyle(fontSize: 11, color: Colors.grey)),
+                const Text(
+                  'Active 27m ago',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
               ],
             ),
           ),
@@ -268,8 +259,6 @@ class ChatMessage {
   final String? timestampLabel;
 }
 
-
-
 /// ======================= BUBBLE =======================
 class MessageBubble extends StatelessWidget {
   const MessageBubble({super.key, required this.message});
@@ -282,7 +271,8 @@ class MessageBubble extends StatelessWidget {
     final maxBubble = MediaQuery.of(context).size.width * 0.66;
 
     Widget content;
-    if (message.imageUrl != null) {
+    // Guard against empty string image URLs
+    if (message.imageUrl != null && message.imageUrl!.isNotEmpty) {
       content = ClipRRect(
         borderRadius: BorderRadius.circular(14),
         child: Image.network(
@@ -321,15 +311,19 @@ class MessageBubble extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         if (!isMe) ...[
-          const _AvatarSmall(url:
-              'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=300&q=60&auto=format&fit=crop'),
+          const _AvatarSmall(
+            url:
+                'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=300&q=60&auto=format&fit=crop',
+          ),
           const SizedBox(width: 8),
         ],
         content,
         if (isMe) ...[
           const SizedBox(width: 8),
-          const _AvatarSmall(url:
-              'https://images.unsplash.com/photo-1519345182560-3f2917c472ef?w=300&q=60&auto=format&fit=crop'),
+          const _AvatarSmall(
+            url:
+                'https://images.unsplash.com/photo-1519345182560-3f2917c472ef?w=300&q=60&auto=format&fit=crop',
+          ),
         ],
       ],
     );
@@ -345,9 +339,9 @@ class _AvatarSmall extends StatelessWidget {
   }
 }
 
-/// Clickable reaction chip
+/// Clickable reaction chip (unused here but kept for future)
 class _Reaction extends StatelessWidget {
-  const  _Reaction   ({required this.child, required this.onTap, Key? key}) : super(key: key);
+  const _Reaction({required this.child, required this.onTap, Key? key}) : super(key: key);
 
   final Widget child;
   final VoidCallback onTap;
@@ -376,6 +370,24 @@ class _Reaction extends StatelessWidget {
             ],
           ),
           child: Center(child: child),
+        ),
+      ),
+    );
+  }
+}
+
+/// Simple empty state when no messages yet
+class _EmptyState extends StatelessWidget {
+  const _EmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 24),
+        child: Text(
+          "No messages yet. Say hi 👋",
+          style: TextStyle(color: Colors.grey, fontSize: 13),
         ),
       ),
     );

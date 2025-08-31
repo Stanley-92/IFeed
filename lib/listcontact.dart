@@ -3,7 +3,6 @@ import 'package:iconify_flutter/iconify_flutter.dart';
 import 'package:iconify_flutter/icons/ion.dart';
 import 'package:iconify_flutter/icons/ph.dart';
 import 'package:iconify_flutter/icons/material_symbols.dart';
-
 import 'chat.dart'; // <-- ensure path is correct
 
 class ChatListApp extends StatelessWidget {
@@ -67,7 +66,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   ),
                   const SizedBox(width: 4),
                   const Text(
-                    'Chats',
+                    'Chat',
                     style:
                         TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
                   ),
