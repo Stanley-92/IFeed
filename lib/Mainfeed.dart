@@ -7,17 +7,24 @@ import 'package:iconify_flutter/icons/mdi.dart';
 import 'package:iconify_flutter/icons/ph.dart';
 import 'package:iconify_flutter/icons/material_symbols.dart';
 import 'package:iconify_flutter/icons/ion.dart';
+import 'package:iconify_flutter/icons/fa.dart';
 import 'package:iconify_flutter/icons/gg.dart';
 import 'package:iconify_flutter/icons/uil.dart';
+import 'package:iconify_flutter/icons/zondicons.dart';
 import 'package:iconify_flutter/icons/tabler.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
-import 'package:visibility_detector/visibility_detector.dart';
 import 'package:video_thumbnail/video_thumbnail.dart';
+import 'package:iconify_flutter/icons/ri.dart';
 
+
+
+
+import 'post_modal.dart' as model;           // <-- shared Post/PostMedia model
+import 'activity_page.dart';
 import 'suggestions_page.dart';
 import 'reel_page.dart';
-import 'comments_page.dart' as reply; // Comments page & models
+import 'comments_page.dart' as reply;
 import 'listcontact.dart' as lc;
 import 'profile.dart' as profile;
 
@@ -41,9 +48,9 @@ class Story {
   final String name;
   final bool isVideo;
   final bool isLocal;
-  final String? mediaPath; // local file path
-  final String? coverUrl; // network image (seeded)
-  final Uint8List? thumbByes; // generated thumbnail for video
+  final String? mediaPath;     // local file path
+  final String? coverUrl;      // network image
+  final Uint8List? thumbByes;  // generated thumbnail for video
 }
 
 /// ======================= MAIN FEED =======================
@@ -55,17 +62,12 @@ class MainfeedScreen extends StatefulWidget {
 
 class _MainfeedScreenState extends State<MainfeedScreen> {
   final List<_Post> _feedPosts = [];
+  final List<ReelItem> _reels = <ReelItem>[];     // videos for ReelsPage
 
-  /// Reels we’ll pass to ReelsPage. We add uploaded videos here.
-  final List<ReelItem> _reels = <ReelItem>[];
-
-  // ----- Stories state -----
+  // Stories
   final ImagePicker _storyPicker = ImagePicker();
-
-  // Your single story (null = none yet)
   Story? myStory;
 
-  // Other users' stories
   late List<Story> stories = List.generate(
     8,
     (i) => Story(
@@ -77,7 +79,7 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
     ),
   );
 
-  // Create/replace your single story — DIRECT TO GALLERY (photo OR video)
+  // Create/replace your story — pick photo OR video
   Future<void> _addStory() async {
     final List<XFile> files = await _storyPicker.pickMultipleMedia();
     if (files.isEmpty) return;
@@ -123,38 +125,46 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
 
   // ----- Posts -----
   Future<void> _handleAddPost(BuildContext context) async {
-    final Post? newPost = await Navigator.push<Post>(
+    // Expect the shared model.Post from the uploader
+    final model.Post? newPost = await Navigator.push<model.Post>(
       context,
       MaterialPageRoute(builder: (_) => const UploadPostPage()),
     );
     if (newPost == null) return;
 
-    // Convert to feed post
+    // Map model.Post -> feed card type
     final _Post converted = _Post(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      username: newPost.userName,
-      avatar: "",
-      time: "just now",
-      caption: newPost.text,
+      id: newPost.id,
+      username: newPost.authorName,
+      avatar: newPost.authorAvatar,
+      time: newPost.timeText,
+      caption: newPost.caption,
       aspect: CardAspect.auto,
-      media: newPost.media
-          .map((m) => _FeedMedia(path: m.file.path, type: m.type, isNetwork: false))
-          .toList(),
+      media: newPost.media.map((m) {
+        final isNetwork = !m.isLocal;
+        final path = m.isLocal ? m.file!.path : (m.url ?? '');
+        final type = (m.type == model.MediaType.image) ? MediaType.image : MediaType.video;
+        return _FeedMedia(path: path, type: type, isNetwork: isNetwork);
+      }).toList(),
       comments: <reply.Comment>[],
     );
 
-    // Add any uploaded videos to reels list (as local file URLs)
+    // Add uploaded videos to reels
     for (final m in newPost.media) {
-      if (m.type == MediaType.video) {
+      if (m.type == model.MediaType.video) {
+        final src = m.isLocal ? 'file://${m.file!.path}' : (m.url ?? '');
+        if (src.isEmpty) continue;
         _reels.insert(
           0,
           ReelItem(
             id: DateTime.now().millisecondsSinceEpoch.toString(),
-            videoUrl: 'file://${m.file.path}',
-            caption: newPost.text.isEmpty ? 'New reel' : newPost.text,
+            videoUrl: src,
+            caption: newPost.caption.isEmpty ? 'New reel' : newPost.caption,
             music: 'Original Audio',
-            avatarUrl: 'https://i.pravatar.cc/150?img=32',
-            authorName: newPost.userName,
+            avatarUrl: newPost.authorAvatar.isNotEmpty
+                ? newPost.authorAvatar
+                : 'https://i.pravatar.cc/150?img=32',
+            authorName: newPost.authorName,
             likes: 0,
             comments: 0,
           ),
@@ -218,7 +228,6 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
     }
   }
 
-  // —— Open Reel Video
   void _openReels() {
     Navigator.push(
       context,
@@ -258,7 +267,7 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
         elevation: 0.8,
         titleSpacing: 16,
         title: const Text(
-          'iFeed',
+          '',
           style: TextStyle(
             color: Color(0xff16a34a),
             fontWeight: FontWeight.w800,
@@ -266,12 +275,21 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
           ),
         ),
         actions: [
-          const Padding(
-            padding: EdgeInsets.only(right: 25),
-            child: Iconify(Ph.heart_bold, color: Colors.black87, size: 28),
+          Padding(
+            padding: const EdgeInsets.only(right: 25),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(30),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ActivityPage()),
+                );
+              },
+              child: const Iconify(Ph.heart_bold, color: Colors.black87, size: 38),
+            ),
           ),
           Padding(
-            padding: const EdgeInsets.only(right: 14),
+            padding: const EdgeInsets.only(right:14),
             child: InkWell(
               borderRadius: BorderRadius.circular(30),
               onTap: () {
@@ -280,7 +298,7 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
                   MaterialPageRoute(builder: (_) => const lc.ChatListScreen()),
                 );
               },
-              child: const Iconify(Uil.comment, color: Colors.black87, size: 28),
+              child: const Iconify(Uil.comment, color: Colors.black87, size: 38),
             ),
           ),
         ],
@@ -357,7 +375,7 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
                       );
                     },
                     separatorBuilder: (_, __) => const SizedBox(width: 22),
-                    itemCount: stories.length + 1, // +1 = Your story only (no duplicates)
+                    itemCount: stories.length + 1, // +1 = Your story only
                   ),
                 ),
               ),
@@ -366,7 +384,11 @@ class _MainfeedScreenState extends State<MainfeedScreen> {
 
             if (_feedPosts.isEmpty) const SliverToBoxAdapter(child: _EmptyFeed()),
 
-            // -------------------- Feed list (with separators) --------------------
+           
+
+
+           
+   // -------------------- Feed list --------------------
             SliverList(
               delegate: SliverChildBuilderDelegate(
                 (context, i) {
@@ -421,7 +443,7 @@ class _EmptyFeed extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 40),
       child: const Column(
         children: [
-          Icon(Icons.photo_library_outlined, size: 60, color: Color.fromARGB(255, 15, 70, 209)),
+          Iconify(Fa.envelope, size: 58, color: Color(0xff3d5afe)),
           SizedBox(height: 16),
           Text('No posts yet', style: TextStyle(fontSize: 18, color: Colors.grey)),
           SizedBox(height: 8),
@@ -506,12 +528,12 @@ class _StoryRing extends StatelessWidget {
                   width: 24,
                   height: 24,
                   decoration: BoxDecoration(
-                    color: const Color.fromARGB(255, 34, 59, 197),
+                    color: const Color.fromARGB(255, 8, 8, 8),
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 2),
                     boxShadow: const [BoxShadow(blurRadius: 2, color: Colors.black26)],
                   ),
-                  child: const Icon(Icons.add, color: Colors.white, size: 16),
+                  child: const Iconify(Ri.add_line, color: Colors.white, size: 16),
                 ),
               ),
             ),
@@ -831,7 +853,6 @@ class _MenuItem {
   final bool danger;
   final VoidCallback onTap;
 
-  // Support either Iconify string or Material icon
   final String? iconify;
   final IconData? icon;
 
@@ -844,15 +865,17 @@ class _MenuItem {
   }) : assert(iconify != null || icon != null, 'Must provide iconify or icon');
 }
 
+
+
 /// ------------------------- Media helpers & layouts -------------------------
 enum CardAspect { auto, vertical, horizontal, square }
 
 double? _forcedAspectFrom(CardAspect a) {
   switch (a) {
     case CardAspect.vertical:
-      return 9 / 14;
+      return 9 / 12;
     case CardAspect.horizontal:
-      return 14 / 9;
+      return 12 / 9;
     case CardAspect.square:
       return 1 / 1;
     case CardAspect.auto:
@@ -860,7 +883,6 @@ double? _forcedAspectFrom(CardAspect a) {
   }
 }
 
-/// Media layout + preview
 class _PostMedia extends StatelessWidget {
   final _Post post;
   const _PostMedia({required this.post});
@@ -874,7 +896,7 @@ class _PostMedia extends StatelessWidget {
     Navigator.of(context).push(
       PageRouteBuilder(
         opaque: false,
-        barrierColor: Colors.black.withOpacity(.95),
+        barrierColor: Colors.black,
         pageBuilder: (_, __, ___) => _MediaViewer(items: post.media, initialIndex: startIndex),
       ),
     );
@@ -885,7 +907,7 @@ class _PostMedia extends StatelessWidget {
     final forcedAspect = _forcedAspectFrom(post.aspect);
 
     return LayoutBuilder(builder: (context, c) {
-      final baseAspect = forcedAspect ?? 9 / 10;
+      final baseAspect = forcedAspect ?? 9 / 12;
       final contentW = c.maxWidth - _side * 2;
       final naturalH = contentW / baseAspect;
       final maxH = MediaQuery.of(context).size.height * _maxScreenFraction;
@@ -902,9 +924,9 @@ class _PostMedia extends StatelessWidget {
         );
       }
 
-      // FIXED: was == 1 twice; this is the 2-tile layout
+// Correct: 2 tiles layout               
       if (post.media.length == 1) {
-        const aspect2 = 9 / 13;
+        const aspect2 = 9 / 12;
         final perTileW = (contentW - _gap) / 2;
         final rowH = (perTileW / aspect2).clamp(_minH, maxH);
 
@@ -1115,7 +1137,7 @@ class _MediaViewerState extends State<_MediaViewer> {
               child: Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(color: Colors.black.withOpacity(.35), borderRadius: BorderRadius.circular(20)),
+                  decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(20)),
                   child: Text('${_index + 1}/${widget.items.length}', style: const TextStyle(color: Colors.white, fontSize: 13)),
                 ),
               ),
@@ -1140,7 +1162,7 @@ class _ViewerPage extends StatelessWidget {
           maxScale: 4,
           child: item.isNetwork ? Image.network(item.path, fit: BoxFit.contain) : Image.file(File(item.path), fit: BoxFit.contain),
         ),
-      );
+      );  
     }
     return Center(
       child: AspectRatio(aspectRatio: 14 / 9, child: _CoverVideo(path: item.path, isNetwork: item.isNetwork)),
@@ -1151,7 +1173,7 @@ class _ViewerPage extends StatelessWidget {
 /// ======================= BOTTOM BAR =======================
 class _BottomBar extends StatelessWidget {
   final VoidCallback onAdd;
-  final VoidCallback onReels; // Open Reel
+  final VoidCallback onReels;
   final VoidCallback onProfile;
 
   const _BottomBar({
@@ -1177,17 +1199,12 @@ class _BottomBar extends StatelessWidget {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => const FollowSuggestionsPage(),
-                ),
+                MaterialPageRoute(builder: (_) => const FollowSuggestionsPage()),
               );
             },
           ),
-          _AddButton(onTap: onAdd), // Upload media
-          _BarIcon(
-            icon: Ph.skip_forward_circle_light,
-            onTap: onReels, // Navigate to ReelsPage
-          ),
+          _AddButton(onTap: onAdd),
+          _BarIcon(icon: Ri.youtube_line, onTap: onReels),
           _BarIcon(icon: Gg.profile, onTap: onProfile),
         ],
       ),
@@ -1206,7 +1223,7 @@ class _AddButton extends StatelessWidget {
         width: 44,
         height: 44,
         decoration: BoxDecoration(color: const Color(0xFF5B6BFF), borderRadius: BorderRadius.circular(10)),
-        child: const Icon(Icons.add, color: Color.fromARGB(255, 255, 255, 255)),
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
@@ -1222,6 +1239,7 @@ class _BarIcon extends StatelessWidget {
     return IconButton(onPressed: onTap, icon: Iconify(icon, color: const Color.fromARGB(221, 87, 86, 86), size: 30));
   }
 }
+
 
 /// ======================= UPLOAD PAGE =======================
 class UploadPostPage extends StatefulWidget {
@@ -1348,14 +1366,24 @@ class _UploadPostPageState extends State<UploadPostPage> {
                         FilledButton(
                           onPressed: _canPost
                               ? () {
-                                  final post = Post(
-                                    userName: 'sinayun_xyn',
-                                    avatarPath: defaultAvatarAsset,
-                                    text: _text.text.trim(),
-                                    media: List.of(_media),
-                                    location: _location,
+                                  // Convert PickedMedia -> model.PostMedia
+                                  final List<model.PostMedia> normalized = _media.map<model.PostMedia>((pm) {
+                                    return pm.type == MediaType.video
+                                        ? model.PostMedia.videoFile(pm.file)
+                                        : model.PostMedia.imageFile(pm.file);
+                                  }).toList();
+
+                                  // Build shared Post and pop it
+                                  final result = model.Post(
+                                    id: DateTime.now().millisecondsSinceEpoch.toString(),
+                                    authorName: 'sinayun_xyn',
+                                    authorAvatar: 'https://i.pravatar.cc/150?img=68',
+                                    timeText: 'just now',
+                                    caption: _text.text.trim(),
+                                    media: normalized,
+                                    comments: const [],
                                   );
-                                  Navigator.pop(context, post);
+                                  Navigator.pop<model.Post>(context, result);
                                 }
                               : null,
                           child: const Text('Post'),
@@ -1374,7 +1402,10 @@ class _UploadPostPageState extends State<UploadPostPage> {
   }
 }
 
-/// ======================= MODELS =======================
+
+
+
+/// ======================= UPLOAD-SCOPE MODELS =======================
 enum MediaType { image, video }
 
 class PickedMedia {
@@ -1383,25 +1414,7 @@ class PickedMedia {
   PickedMedia(this.file, this.type);
 }
 
-class Post {
-  final String userName;
-  final String avatarPath;
-  final String text;
-  final List<PickedMedia> media;
-  final String? location;
-  final DateTime createdAt;
-
-  Post({
-    required this.userName,
-    required this.avatarPath,
-    required this.text,
-    required this.media,
-    this.location,
-    DateTime? createdAt,
-  }) : createdAt = createdAt ?? DateTime.now();
-}
-
-/// ======================= FEED TYPES & MOCK =======================
+/// ======================= FEED TYPES =======================
 class _FeedMedia {
   final String path; // file path or URL
   final MediaType type;
@@ -1492,7 +1505,7 @@ class _PreviewWrap extends StatelessWidget {
                 child: InkWell(
                   onTap: () => onRemove(i),
                   child: Container(
-                    decoration: BoxDecoration(color: Colors.black.withOpacity(.50), borderRadius: BorderRadius.circular(20)),
+                    decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(20)),
                     padding: const EdgeInsets.all(3),
                     child: const Icon(Icons.close, color: Colors.white, size: 26),
                   ),
