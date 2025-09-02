@@ -1,21 +1,39 @@
+// profile.dart
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:iconify_flutter/iconify_flutter.dart';
 import 'package:iconify_flutter/icons/ph.dart';
 import 'package:iconify_flutter/icons/ion.dart';
 import 'package:iconify_flutter/icons/material_symbols.dart';
 import 'package:iconify_flutter/icons/fa.dart';
-import 'package:iconify_flutter/icons/gg.dart';       // ✅ match Mainfeed bottom bar
+import 'package:iconify_flutter/icons/gg.dart';
 import 'package:iconify_flutter/icons/mdi.dart';
+import 'package:iconify_flutter/icons/uil.dart';
+import 'package:video_player/video_player.dart';
 
-import 'suggestions_page.dart';                       // Search page
-import 'reel_page.dart';                              // Reels page
-import 'mainfeed.dart' show UploadPostPage,           // Use Upload composer from Mainfeed
-                             MainfeedScreen;          // For Home navigation
+import 'post_modal.dart' as model; // Post, PostMedia, MediaType
+import 'suggestions_page.dart';
+import 'reel_page.dart';
+import 'mainfeed.dart' show MainfeedScreen, UploadPostPage;
 
-class ProfileUserScreen extends StatelessWidget {
+const String _defaultAvatar = 'https://i.pravatar.cc/150?img=68';
+
+class ProfileUserScreen extends StatefulWidget {
   const ProfileUserScreen({super.key});
 
-  // ---------- helpers to match Mainfeed ----------
+  @override
+  State<ProfileUserScreen> createState() => _ProfileUserScreenState();
+}
+
+enum _Tab { iFeed, shuffle, media, replies }
+
+class _ProfileUserScreenState extends State<ProfileUserScreen> {
+  final List<model.Post> _posts = <model.Post>[];
+  _Tab _active = _Tab.iFeed;
+
+
+
+  // ---------- Nav ----------
   void _goHome(BuildContext context) {
     Navigator.pushAndRemoveUntil(
       context,
@@ -31,13 +49,6 @@ class ProfileUserScreen extends StatelessWidget {
     );
   }
 
-  void _openComposer(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const UploadPostPage()),
-    );
-  }
-
   void _openReels(BuildContext context) {
     Navigator.push(
       context,
@@ -45,8 +56,55 @@ class ProfileUserScreen extends StatelessWidget {
     );
   }
 
+
+
+  // ---------- Upload (same page as Mainfeed) ----------
+  Future<void> _openComposer(BuildContext context) async {
+    final model.Post? newPost = await Navigator.push<model.Post>(
+      context,
+      MaterialPageRoute(builder: (_) => const UploadPostPage()),
+    );
+    if (newPost != null) {
+      setState(() {
+        _posts.insert(0, newPost);
+        // After posting, jump to Media if it has media; otherwise stay in iFeed
+        _active = newPost.media.isNotEmpty ? _Tab.media : _Tab.iFeed;
+      });
+    }
+  }
+
+  // ---------- Helpers ----------
+  bool _hasMedia(model.Post p) => p.media.isNotEmpty;
+  List<model.Post> _mediaOnly() => _posts.where(_hasMedia).toList();
+
   @override
   Widget build(BuildContext context) {
+    // Choose content by tab
+    Widget content;
+    switch (_active) {
+      case _Tab.iFeed:
+        content = _posts.isEmpty
+            ? _EmptyState(onCreate: () => _openComposer(context))
+            : _ProfileMediaList(posts: _posts); // Full post cards (same as Media)
+        break;
+
+      case _Tab.shuffle:
+        // Placeholder for "Repost" area – shows nothing yet
+        content = const _NothingYet(label: 'Nothing yet!');
+        break;
+
+      case _Tab.media:
+        final mediaPosts = _mediaOnly();
+        content = mediaPosts.isEmpty
+            ? const _NothingYet(label: 'No media yet')
+            : _ProfileMediaList(posts: mediaPosts); // Full post cards
+        break;
+
+      case _Tab.replies:
+        content = const _NothingYet(label: 'No replies yet');
+        break;
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xfffbf7f6),
       body: SafeArea(
@@ -55,12 +113,12 @@ class ProfileUserScreen extends StatelessWidget {
             // ---------- Header ----------
             Container(
               padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
-              decoration: const BoxDecoration(color: Colors.white),
+              color: Colors.white,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'iFeed',
+                    '', // iFeed Logo here
                     style: TextStyle(
                       color: Color(0xff16a34a),
                       fontWeight: FontWeight.w800,
@@ -76,36 +134,38 @@ class ProfileUserScreen extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'sinayun_xyn',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 25,
-                              ),
-                            ),
+                            Text('sinayun_xyn',
+                                style: TextStyle(
+                                  fontStyle: FontStyle.normal,
+                                  fontWeight: FontWeight.w800, fontSize: 15)),
                             SizedBox(height: 2),
-                            Text(
-                              'Software Engineer',
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Color.fromARGB(137, 19, 16, 16),
-                              ),
-                            ),
+                            Text('Software Engineer',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Color.fromARGB(137, 19, 16, 16),
+                                )),
                           ],
                         ),
                       ),
-                      IconButton(icon: const Iconify(Fa.edit, size: 24), onPressed: () {}),
-                      IconButton(icon: const Iconify(Ph.heart_bold, size: 28), onPressed: () {}),
+                      IconButton(
+                        icon: const Iconify(Fa.edit, size: 24),
+                        onPressed: () {},
+                      ),
+                      IconButton(
+                        icon: const Iconify(Ph.heart_bold, size: 28),
+                        onPressed: () {},
+                      ),
                       const CircleAvatar(
-                        radius: 38,
-                        backgroundImage: NetworkImage('https://i.pravatar.cc/150?img=68'),
+                        radius: 30,
+                        backgroundImage: NetworkImage(_defaultAvatar),
                       ),
                     ],
                   ),
                   const SizedBox(height: 12),
                   const Text(
                     'Life is Good alway bring you a nice\none way to heaven',
-                    style: TextStyle(fontSize: 18, color: Color.fromARGB(134, 0, 0, 0)),
+                    style:
+                        TextStyle(fontSize: 15, color: Color.fromARGB(240, 0, 0, 0)),
                   ),
                   const SizedBox(height: 8),
                   Row(
@@ -120,7 +180,7 @@ class ProfileUserScreen extends StatelessWidget {
               ),
             ),
 
-            // ---------- Tabs row ----------
+            // ---------- Tabs ----------
             Container(
               height: 48,
               decoration: BoxDecoration(
@@ -132,63 +192,36 @@ class ProfileUserScreen extends StatelessWidget {
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: const [
-                  _TabText('iFeed', isActive: true),
-                  _TabText('Shuffle'),
-                  _TabText('Media'),
-                  _TabText('Share'),
+                children: [
+                  _TabText('iFeed',
+                      isActive: _active == _Tab.iFeed,
+                      onTap: () => setState(() => _active = _Tab.iFeed)),
+                  _TabText('Shuffle',
+                      isActive: _active == _Tab.shuffle,
+                      onTap: () => setState(() => _active = _Tab.shuffle)),
+                  _TabText('Media',
+                      isActive: _active == _Tab.media,
+                      onTap: () => setState(() => _active = _Tab.media)),
+                  _TabText('Replies',
+                      isActive: _active == _Tab.replies,
+                      onTap: () => setState(() => _active = _Tab.replies)),
                 ],
               ),
             ),
 
-            // ---------- Content (Empty state) ----------
+            // ---------- Content ----------
             Expanded(
               child: Container(
                 color: Colors.white,
                 width: double.infinity,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 128,
-                      height: 92,
-                      decoration: BoxDecoration(
-                        color: const Color(0xffe8edff),
-                        borderRadius: BorderRadius.circular(22),
-                      ),
-                      child: const Center(
-                        child: Iconify(Fa.envelope, size: 58, color: Color(0xff3d5afe)),
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-                    const Text(
-                      "Now you're all up here !",
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 28),
-                    ),
-                    const SizedBox(height: 28),
-                    const Text(
-                      'Start new conversation by creating a post',
-                      style: TextStyle(fontSize: 15, color: Colors.black54),
-                    ),
-                    const SizedBox(height: 8),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: const Color(0xff3d5afe),
-                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                      ),
-                      onPressed: () => _openComposer(context),
-                      child: const Text('Create post'),
-                    ),
-                  ],
-                ),
+                child: content,
               ),
             ),
           ],
         ),
       ),
 
-      // ---------- Bottom Bar (EXACT like Mainfeed) ----------
+      // ---------- Bottom Bar ----------
       bottomNavigationBar: Container(
         height: 68,
         decoration: const BoxDecoration(
@@ -198,7 +231,9 @@ class ProfileUserScreen extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _BarIcon(icon: MaterialSymbols.home_outline_rounded, onTap: () => _goHome(context)),
+            _BarIcon(
+                icon: MaterialSymbols.home_outline_rounded,
+                onTap: () => _goHome(context)),
             _BarIcon(icon: Ion.search, onTap: () => _openSearch(context)),
             _AddButton(onTap: () => _openComposer(context)),
             _BarIcon(icon: Ph.skip_forward_circle_light, onTap: () => _openReels(context)),
@@ -210,8 +245,432 @@ class ProfileUserScreen extends StatelessWidget {
   }
 }
 
-// ======= small widgets (matching Mainfeed) =======
+// ======================= Shuffle / Replies placeholder =======================
+class _NothingYet extends StatelessWidget {
+  const _NothingYet({required this.label});
+  final String label;
+  @override
+  Widget build(BuildContext context) {
+    return Center(child: Text(label, style: const TextStyle(color: Colors.black54)));
+  }
+}
 
+// ======================= Media/iFeed: Full post cards =======================
+class _ProfileMediaList extends StatelessWidget {
+  const _ProfileMediaList({required this.posts});
+  final List<model.Post> posts;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: const EdgeInsets.only(bottom: 24),
+      itemBuilder: (_, i) => _ProfilePostCard.fromModel(posts[i]),
+      separatorBuilder: (_, __) => const SizedBox(height: 18),
+      itemCount: posts.length,
+    );
+  }
+}
+
+/// Lightweight feed types mirroring mainfeed.dart for rendering
+enum _PMediaType { image, video }
+
+class _ProfileFeedMedia {
+  final String path; // file path or URL
+  final _PMediaType type;
+  final bool isNetwork;
+  _ProfileFeedMedia({required this.path, required this.type, required this.isNetwork});
+}
+
+class _ProfilePost {
+  final String id;
+  final String username;
+  final String avatar; // url
+  final String time;
+  final String caption;
+  final List<_ProfileFeedMedia> media;
+
+  int likeCount;
+  int commentCount;
+  int shareCount;
+  bool isLiked;
+  bool isShared;
+
+  _ProfilePost({
+    required this.id,
+    required this.username,
+    required this.avatar,
+    required this.time,
+    required this.caption,
+    required this.media,
+    this.likeCount = 0,
+    this.commentCount = 0,
+    this.shareCount = 0,
+    this.isLiked = false,
+    this.isShared = false,
+  });
+}
+
+class _ProfilePostCard extends StatefulWidget {
+  const _ProfilePostCard({required this.post});
+  final _ProfilePost post;
+
+  factory _ProfilePostCard.fromModel(model.Post p) {
+    final media = p.media.map((m) {
+      final isNetwork = !m.isLocal;
+      final path = m.isLocal ? (m.file?.path ?? '') : (m.url ?? '');
+      final type = (m.type == model.MediaType.image)
+          ? _PMediaType.image
+          : _PMediaType.video;
+      return _ProfileFeedMedia(path: path, type: type, isNetwork: isNetwork);
+    }).toList();
+
+    return _ProfilePostCard(
+      post: _ProfilePost(
+        id: p.id,
+        username: p.authorName,
+        avatar: (p.authorAvatar.isNotEmpty ? p.authorAvatar : _defaultAvatar),
+        time: p.timeText,
+        caption: p.caption,
+        media: media,
+      ),
+    );
+  }
+
+  @override
+  State<_ProfilePostCard> createState() => _ProfilePostCardState();
+}
+
+class _ProfilePostCardState extends State<_ProfilePostCard> {
+  String _formatCount(int count) {
+    if (count < 1000) return count.toString();
+    final v = (count / 1000).toStringAsFixed(1);
+    return v.endsWith('.0') ? '${v.substring(0, v.length - 2)}K' : '${v}K';
+  }
+
+  ImageProvider _avatarProvider(String avatar) {
+    if (avatar.isEmpty) return const NetworkImage(_defaultAvatar);
+    return NetworkImage(avatar);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final post = widget.post;
+
+    return Container(
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(38, 10, 12, 5),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 25,
+                  backgroundImage: _avatarProvider(post.avatar),
+                  onBackgroundImageError: (_, __) {},
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(post.username,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w700, fontSize: 18)),
+                      Text(post.time,
+                          style: const TextStyle(
+                              color: Colors.black54, fontSize: 12)),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Iconify(Mdi.dots_horizontal, size: 24),
+                  onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      backgroundColor: Colors.white,
+                      builder: (_) => SafeArea(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            ListTile(
+                              leading: const Icon(Icons.bookmark_border),
+                              title: const Text('Save'),
+                              onTap: () => Navigator.pop(context),
+                            ),
+                            ListTile(
+                              leading: const Icon(Icons.link),
+                              title: const Text('Copy link'),
+                              onTap: () => Navigator.pop(context),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          // Caption
+          if (post.caption.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(100, 0, 12, 18),
+              child: Text(post.caption,
+                  style: const TextStyle(
+                      fontSize: 15, color: Colors.black87, height: 1.35)),
+            ),
+
+          // Media (single / two / horizontal list)
+          if (post.media.isNotEmpty) _ProfilePostMedia(items: post.media),
+
+          // Actions (heart / comment / shuffle / share)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(88, 0, 18, 8),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: Iconify(
+                    post.isLiked ? Ph.heart_fill : Ph.heart_bold,
+                    size: 24,
+                    color: post.isLiked ? Colors.red : null,
+                  ),
+                  onPressed: () => setState(() {
+                    post.isLiked = !post.isLiked;
+                    post.isLiked ? post.likeCount++ : post.likeCount--;
+                  }),
+                ),
+                if (post.likeCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 16.0),
+                    child: Text(
+                      _formatCount(post.likeCount),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: post.isLiked ? Colors.red : Colors.black54,
+                      ),
+                    ),
+                  ),
+                IconButton(
+                  icon: const Iconify(Uil.comment, size: 24),
+                  onPressed: () {
+                    // hook to your Comments page if you want (same as mainfeed.dart)
+                  },
+                ),
+                if (post.commentCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 16.0, left: 4),
+                    child: Text(_formatCount(post.commentCount),
+                        style: const TextStyle(fontSize: 13)),
+                  ),
+                IconButton(
+                    icon: const Iconify(Ph.shuffle_fill, size: 24),
+                    onPressed: () => setState(() => post.shareCount++)),
+                if (post.shareCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 16.0, left: 4),
+                    child: Text(_formatCount(post.shareCount),
+                        style: const TextStyle(fontSize: 13)),
+                  ),
+                IconButton(
+                  icon: Iconify(
+                    post.isShared ? Ph.paper_plane_tilt_fill : Ph.paper_plane_tilt,
+                    size: 24,
+                    color: post.isShared ? Colors.blue : null,
+                  ),
+                  onPressed: () =>
+                      setState(() => post.isShared = !post.isShared),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProfilePostMedia extends StatelessWidget {
+  const _ProfilePostMedia({required this.items});
+  final List<_ProfileFeedMedia> items;
+
+  static const double _side = 100;
+  static const double _gap = 8;
+  static const double _minH = 180;
+  static const double _maxScreenFraction = 0.55;
+
+  @override
+  Widget build(BuildContext context) {
+    // auto aspect like mainfeed
+    const baseAspect = 9 / 12;
+
+    return LayoutBuilder(builder: (context, c) {
+      final contentW = c.maxWidth - _side * 2;
+      final naturalH = contentW / baseAspect;
+      final maxH = MediaQuery.of(context).size.height * _maxScreenFraction;
+      final h = naturalH.clamp(_minH, maxH);
+
+      if (items.length == 1) {
+        final m = items.first;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: _side),
+          child: SizedBox(
+            height: h,
+            child: _RoundedTile(m: m, aspect: baseAspect),
+          ),
+        );
+      }
+
+      if (items.length == 1) {
+        const aspect2 = 9 / 12;
+        final perTileW = (contentW - _gap) / 2;
+        final rowH = (perTileW / aspect2).clamp(_minH, maxH);
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: _side),
+          child: SizedBox(
+            height: rowH,
+            child: Row(
+              children: [
+                Expanded(child: _RoundedTile(m: items[0], aspect: aspect2)),
+                const SizedBox(width: _gap),
+                Expanded(child: _RoundedTile(m: items[1], aspect: aspect2)),
+              ],
+            ),
+          ),
+        );
+      }
+
+      return SizedBox(
+        height: h,
+        child: ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: _side),
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const SizedBox(width: _gap),
+          itemBuilder: (_, i) {
+            final m = items[i];
+            return SizedBox(
+              width: h * baseAspect,
+              child: _RoundedTile(m: m, aspect: baseAspect),
+            );
+          },
+        ),
+      );
+    });
+  }
+}
+
+class _RoundedTile extends StatelessWidget {
+  final _ProfileFeedMedia m;
+  final double aspect;
+  const _RoundedTile({required this.m, required this.aspect});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: AspectRatio(
+        aspectRatio: aspect,
+        child: m.type == _PMediaType.image
+            ? (m.isNetwork
+                ? Image.network(m.path, fit: BoxFit.cover)
+                : Image.file(File(m.path), fit: BoxFit.cover))
+            : _CoverVideo(path: m.path, isNetwork: m.isNetwork),
+      ),
+    );
+  }
+}
+
+/// Small inline video (tap to play/pause)
+class _CoverVideo extends StatefulWidget {
+  final String path;
+  final bool isNetwork;
+  const _CoverVideo({required this.path, required this.isNetwork});
+
+  @override
+  State<_CoverVideo> createState() => _CoverVideoState();
+}
+
+class _CoverVideoState extends State<_CoverVideo> {
+  VideoPlayerController? _c;
+  bool _ready = false;
+  bool _playing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = widget.isNetwork
+        ? VideoPlayerController.networkUrl(Uri.parse(widget.path))
+        : VideoPlayerController.file(File(widget.path));
+    _c!.setLooping(true);
+    _c!.initialize().then((_) {
+      if (!mounted) return;
+      setState(() => _ready = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _c?.pause();
+    _c?.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (!_ready) return;
+    setState(() {
+      _playing = !_playing;
+      _playing ? _c!.play() : _c!.pause();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: _ready
+              ? FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: _c!.value.size.width,
+                    height: _c!.value.size.height,
+                    child: VideoPlayer(_c!),
+                  ),
+                )
+              : const ColoredBox(
+                  color: Colors.black12,
+                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                ),
+        ),
+        Positioned.fill(
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _toggle,
+              child: Center(
+                child: AnimatedOpacity(
+                  opacity: _playing ? 0.0 : 1.0,
+                  duration: const Duration(milliseconds: 150),
+                  child: const Icon(Icons.play_circle_fill,
+                      size: 56, color: Colors.white),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ======================= Bits =======================
 class _BarIcon extends StatelessWidget {
   final String icon;
   final VoidCallback? onTap;
@@ -221,7 +680,8 @@ class _BarIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return IconButton(
       onPressed: onTap,
-      icon: Iconify(icon, color: const Color.fromARGB(221, 87, 86, 86), size: 30),
+      icon: Iconify(icon,
+          color: const Color.fromARGB(221, 87, 86, 86), size: 30),
     );
   }
 }
@@ -252,38 +712,90 @@ class _SmallStat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(label, style: const TextStyle(fontSize: 11.5, color: Colors.black54));
+    return Text(label,
+        style: const TextStyle(fontSize: 11.5, color: Colors.black54));
   }
 }
 
 class _TabText extends StatelessWidget {
   final String text;
   final bool isActive;
-  const _TabText(this.text, {this.isActive = false});
+  final VoidCallback? onTap;
+  const _TabText(this.text, {this.isActive = false, this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final c = isActive ? Colors.black : Colors.black87;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            text,
+            style: TextStyle(
+              fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
+              color: c,
+            ),
+          ),
+          const SizedBox(height: 3),
+          if (isActive)
+            Container(
+              width: 25,
+              height: 3,
+              decoration: BoxDecoration(
+                color: const Color.fromARGB(255, 36, 64, 223),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({required this.onCreate});
+  final VoidCallback onCreate;
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Text(
-          text,
-          style: TextStyle(
-            fontWeight: isActive ? FontWeight.w800 : FontWeight.w600,
-            color: c,
+        Container(
+          width: 128,
+          height: 92,
+          decoration: BoxDecoration(
+            color: const Color(0xffe8edff),
+            borderRadius: BorderRadius.circular(22),
+          ),
+          child: const Center(
+            child: Iconify(Fa.envelope, size: 58, color: Color(0xff3d5afe)),
           ),
         ),
-        const SizedBox(height: 3),
-        if (isActive)
-          Container(
-            width: 25,
-            height: 3,
-            decoration: BoxDecoration(
-              color: const Color.fromARGB(255, 36, 64, 223),
-              borderRadius: BorderRadius.circular(2),
-            ),
+        const SizedBox(height: 28),
+        const Text(
+          "Now you're all up here !",
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 28),
+        ),
+        const SizedBox(height: 28),
+        const Text(
+          'Start new conversation by creating a post',
+          style: TextStyle(fontSize: 15, color: Colors.black54),
+        ),
+        const SizedBox(height: 8),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: const Color(0xff3d5afe),
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(15)),
           ),
+          onPressed: onCreate,
+          child: const Text('Create post'),
+        ),
       ],
     );
   }
