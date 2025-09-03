@@ -501,42 +501,25 @@ class _BottomActionBar extends StatelessWidget {
           Row(
             children: [
               _chip(
-                icon: Iconify(Ph.heart_bold, size: 20, color: Colors.white),
+                icon: Iconify(Ph.heart_bold, size: 25, color: Colors.white),
                 label: likesLabel,
                 onTap: onLike,
               ),
               const SizedBox(width: 14),
               _chip(
-                icon: const Iconify(Uil.comment, size: 20, color: Colors.white),
+                icon: const Iconify(Uil.comment, size: 25, color: Colors.white),
                 label: commentsLabel,
                 onTap: onComment,
-              ),
-              const SizedBox(width: 14),
-              GestureDetector(
-                onTap: onTogglePlay,
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.black38,
-                    border: Border.all(color: Colors.white38),
-                  ),
-                  child: Iconify(
-                    isPlaying ? Ph.pause_circle_light: Teenyicons.play_circle_outline,
-                    color: Colors.white,
-                    size: 28,
-                  ),
-                ),
-              ),
+              ), 
+             // Icon  Action Below 
               const SizedBox(width: 14),
               _circle(
-                icon: const Iconify(Ph.shuffle_fill, size: 20, color: Colors.white),
+                icon: const Iconify(Ph.shuffle_fill, size: 25, color: Colors.white),
                 onTap: onRemix,
               ),
               const SizedBox(width: 14),
               _circle(
-                icon: const Iconify(Ph.paper_plane_tilt, size: 20, color: Colors.white),
+                icon: const Iconify(Ph.paper_plane_tilt, size: 25, color: Colors.white),
                 onTap: onShare,
               ),
             ],
