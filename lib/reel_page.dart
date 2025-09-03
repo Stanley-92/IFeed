@@ -2,15 +2,18 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:iconify_flutter/iconify_flutter.dart';
+import 'package:iconify_flutter/icons/material_symbols.dart';
 import 'package:iconify_flutter/icons/ph.dart';
 import 'package:iconify_flutter/icons/uil.dart';
+import 'package:iconify_flutter/icons/teenyicons.dart';
+
 import 'package:video_player/video_player.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 /// --------------------------- MODEL ---------------------------
 class ReelItem {
   final String id;
-  final String videoUrl;   // URL (or switch to file://path when you add local support)
+  final String videoUrl;
   final String caption;
   final String music;
   final String avatarUrl;
@@ -44,6 +47,8 @@ class ReelsPage extends StatefulWidget {
 class _ReelsPageState extends State<ReelsPage> {
   late final PageController _pageController;
   late final List<ReelItem> _items;
+
+  /// We keep controllers per-page index.
   final Map<int, VideoPlayerController> _controllers = {};
   int _currentIndex = 0;
   bool _muted = true;
@@ -54,49 +59,84 @@ class _ReelsPageState extends State<ReelsPage> {
     super.initState();
     _items = widget.items ?? _demoItems;
     _pageController = PageController();
+
+    // Prepare first and preload next
     _initControllerFor(0);
     if (_items.length > 1) _initControllerFor(1);
   }
 
   @override
   void dispose() {
+    // Pause all before dispose to reduce race windows
     for (final c in _controllers.values) {
+      try {
+        if (c.value.isInitialized) c.pause();
+      } catch (_) {}
       c.dispose();
     }
+    _controllers.clear();
     _pageController.dispose();
     super.dispose();
   }
 
   Future<void> _initControllerFor(int index) async {
+    if (!mounted) return;
     if (index < 0 || index >= _items.length) return;
-    if (_controllers[index] != null) return;
+    if (_controllers.containsKey(index)) return;
 
     final item = _items[index];
-    final c = VideoPlayerController.networkUrl(Uri.parse(item.videoUrl));
-    _controllers[index] = c;
+    final controller = VideoPlayerController.networkUrl(Uri.parse(item.videoUrl));
 
-    await c.initialize();
-    c
-      ..setLooping(true)
-      ..setVolume(_muted ? 0 : 1);
+    // Insert immediately so subsequent reads see a key (even if not initialized yet)
+    _controllers[index] = controller;
 
-    if (!mounted) return;
+    try {
+      await controller.initialize();
+      if (!mounted) {
+        // If we were disposed while initializing, dispose controller immediately
+        controller.dispose();
+        _controllers.remove(index);
+        return;
+      }
 
-    if (index == _currentIndex) {
-      c.play();
-      setState(() {});
-    }
+      controller
+        ..setLooping(true)
+        ..setVolume(_muted ? 0 : 1);
 
-    if (index + 1 < _items.length) {
-      // Preload next quietly
-      unawaited(_initControllerFor(index + 1));
-    }
+      // Autoplay only the current one
+      if (index == _currentIndex) {
+        try {
+          controller.play();
+        } catch (_) {}
+      }
+
+      if (mounted) setState(() {});
+
+      // Preload next silently
+      if (index + 1 < _items.length) {
+        unawaited(_initControllerFor(index + 1));
+      }
+    } catch (_) {
+      // On any init error, clean entry
+      _controllers.remove(index);
+      try {
+        controller.dispose();
+      } catch (_) {}
+    } 
   }
 
   void _playOnly(int index) {
     _controllers.forEach((i, c) {
       if (!c.value.isInitialized) return;
-      i == index ? c.play() : c.pause();
+      try {
+        if (i == index) {
+          c.play();
+        } else {
+          c.pause();
+        }
+      } catch (_) {
+        // If a race caused a dispose, ignore
+      }
     });
   }
 
@@ -104,7 +144,9 @@ class _ReelsPageState extends State<ReelsPage> {
     setState(() => _muted = !_muted);
     final c = _controllers[_currentIndex];
     if (c != null && c.value.isInitialized) {
-      c.setVolume(_muted ? 0 : 1);
+      try {
+        c.setVolume(_muted ? 0 : 1);
+      } catch (_) {}
     }
   }
 
@@ -125,10 +167,16 @@ class _ReelsPageState extends State<ReelsPage> {
             scrollDirection: Axis.vertical,
             itemCount: _items.length,
             onPageChanged: (i) async {
+              if (!mounted) return;
               setState(() => _currentIndex = i);
+
+              // Ensure controller exists/ready
               await _initControllerFor(i);
+
+              // Play only the active index
               _playOnly(i);
-              // warm preload
+
+              // Warm preload the next one
               unawaited(_initControllerFor(i + 1));
             },
             itemBuilder: (context, index) {
@@ -142,12 +190,14 @@ class _ReelsPageState extends State<ReelsPage> {
                 onTapVideo: () {
                   final c = _controllers[index];
                   if (c == null || !c.value.isInitialized) return;
-                  c.value.isPlaying ? c.pause() : c.play();
-                  setState(() {}); // refresh play/pause icon
+                  try {
+                    c.value.isPlaying ? c.pause() : c.play();
+                  } catch (_) {}
+                  if (mounted) setState(() {});
                 },
                 onDoubleTapVideo: _burstHeart,
                 // Actions
-                onComment: () {}, // wire to your comments route if you want
+                onComment: () {},
                 onShare: () {},
               );
             },
@@ -158,13 +208,15 @@ class _ReelsPageState extends State<ReelsPage> {
             child: Row(
               children: [
                 IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Colors.white),
+                  icon: const Iconify(MaterialSymbols.arrow_back_ios, color: Colors.white),                  // Arrow back
                   onPressed: () => Navigator.of(context).maybePop(),
                 ),
                 const Spacer(),
                 IconButton(
-                  icon: Icon(_muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                      color: Colors.white),
+                  icon: Iconify(
+                    _muted ?Teenyicons.sound_off_outline :Teenyicons.sound_on_outline,
+                    color: Colors.white,
+                  ),
                   onPressed: _toggleMute,
                 ),
               ],
@@ -175,6 +227,9 @@ class _ReelsPageState extends State<ReelsPage> {
     );
   }
 }
+
+
+
 
 /// --------------------------- REEL TILE ---------------------------
 class _ReelTile extends StatefulWidget {
@@ -204,7 +259,7 @@ class _ReelTile extends StatefulWidget {
   State<_ReelTile> createState() => _ReelTileState();
 }
 
-class _ReelTileState extends State<_ReelTile> {
+class _ReelTileState extends State<_ReelTile> with AutomaticKeepAliveClientMixin {
   late int _likeCount;
   late int _commentCount;
   bool _liked = false;
@@ -215,6 +270,9 @@ class _ReelTileState extends State<_ReelTile> {
     _likeCount = widget.item.likes;
     _commentCount = widget.item.comments;
   }
+
+  @override
+  bool get wantKeepAlive => true;
 
   void _toggleLike() {
     setState(() {
@@ -232,15 +290,23 @@ class _ReelTileState extends State<_ReelTile> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final initialized = widget.controller?.value.isInitialized == true;
 
     return VisibilityDetector(
       key: Key('reel-${widget.item.id}'),
       onVisibilityChanged: (info) {
+        if (!mounted) return;
         final visible = info.visibleFraction > 0.6;
         final c = widget.controller;
-        if (c != null && c.value.isInitialized) {
+        if (c == null) return;
+        if (!c.value.isInitialized) return;
+
+        // A final safety net: controller might get disposed in a race.
+        try {
           visible ? c.play() : c.pause();
+        } catch (_) {
+          // ignore if already disposed during teardown
         }
       },
       child: Stack(
@@ -276,7 +342,7 @@ class _ReelTileState extends State<_ReelTile> {
 
           // Heart burst
           if (widget.overlayHeart)
-            const Center(child: Icon(Icons.favorite, color: Colors.white70, size: 120)),
+            const Center(child: Icon(Icons.favorite, color: Color.fromARGB(179, 179, 15, 15), size: 120)),
 
           // Subtle bottom gradient
           const _BottomGradient(),
@@ -288,7 +354,7 @@ class _ReelTileState extends State<_ReelTile> {
             muted: widget.muted,
           ),
 
-          // Bottom action bar (like screenshot)
+          // Bottom action bar
           _BottomActionBar(
             isPlaying: widget.controller?.value.isPlaying == true,
             likesLabel: _k(_likeCount),
@@ -339,7 +405,7 @@ class _BottomMeta extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.greenAccent.shade400,
+                  color: Colors.greenAccent,
                   borderRadius: BorderRadius.circular(999),
                 ),
                 child: const Text(
@@ -359,7 +425,7 @@ class _BottomMeta extends StatelessWidget {
           const SizedBox(height: 6),
           Row(
             children: [
-              const Icon(Icons.music_note_rounded, size: 18, color: Colors.white70),
+              const Iconify(Teenyicons.play_circle_outline, size: 48, color: Colors.white70),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
@@ -370,8 +436,13 @@ class _BottomMeta extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(muted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
-                  color: Colors.white70, size: 18),
+               Iconify(
+      muted
+          ? MaterialSymbols.volume_off_rounded
+          : MaterialSymbols.volume_up_rounded,
+      color: Colors.white70,
+      size: 18,
+    ),
             ],
           ),
           const SizedBox(height: 10),
@@ -395,7 +466,7 @@ class _BottomMeta extends StatelessWidget {
   }
 }
 
-/// Bottom action bar like your screenshot
+/// Bottom action bar
 class _BottomActionBar extends StatelessWidget {
   const _BottomActionBar({
     required this.isPlaying,
@@ -451,8 +522,8 @@ class _BottomActionBar extends StatelessWidget {
                     color: Colors.black38,
                     border: Border.all(color: Colors.white38),
                   ),
-                  child: Icon(
-                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  child: Iconify(
+                    isPlaying ? Ph.pause_circle_light: Teenyicons.play_circle_outline,
                     color: Colors.white,
                     size: 28,
                   ),
@@ -507,7 +578,7 @@ class _BottomGradient extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Positioned.fill(
+    return PositionedFill(
       child: IgnorePointer(
         child: DecoratedBox(
           decoration: BoxDecoration(
@@ -516,8 +587,8 @@ class _BottomGradient extends StatelessWidget {
               end: Alignment.bottomCenter,
               colors: [
                 Colors.transparent,
-                Colors.black.withOpacity(0.2),
-                Colors.black.withOpacity(0.45),
+                Colors.black,
+                Colors.black,
               ],
               stops: const [0.5, 0.8, 1],
             ),
@@ -525,6 +596,16 @@ class _BottomGradient extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Helper to mimic Positioned.fill but keep const constructor above
+class PositionedFill extends StatelessWidget {
+  const PositionedFill({super.key, required this.child});
+  final Widget child;
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(top: 0, left: 0, right: 0, bottom: 0, child: child);
   }
 }
 
@@ -543,7 +624,7 @@ const _demoItems = <ReelItem>[
   ReelItem(
     id: '2',
     videoUrl: 'https://flutter.github.io/assets-for-api-docs/assets/videos/butterfly.mp4',
-    caption: 'Tech vlog: iFeed update #3',
+    caption: 'Tech vlog: iFeed update',
     music: 'Track — iFeed Beats',
     avatarUrl: 'https://images.unsplash.com/photo-1545996124-0501ebae84d5?w=200',
     authorName: 'techsquad',
@@ -551,4 +632,3 @@ const _demoItems = <ReelItem>[
     comments: 0,
   ),
 ];
-
