@@ -342,10 +342,7 @@ class _ReelTileState extends State<_ReelTile> with AutomaticKeepAliveClientMixin
 
           // Heart burst
           if (widget.overlayHeart)
-            const Center(child: Icon(Icons.favorite, color: Color.fromARGB(179, 179, 15, 15), size: 120)),
-
-          // Subtle bottom gradient
-          const _BottomGradient(),
+            const Center(child: Iconify(Ph.heart, color: Color.fromARGB(179, 179, 15, 15), size: 120)),
 
           // Left-bottom meta + progress
           _BottomMeta(
@@ -397,7 +394,7 @@ class _BottomMeta extends StatelessWidget {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              CircleAvatar(radius: 16, backgroundImage: NetworkImage(item.avatarUrl)),
+              CircleAvatar(radius: 20, backgroundImage: NetworkImage(item.avatarUrl)),
               const SizedBox(width: 8),
               Text('@${item.authorName}',
                   style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
@@ -422,11 +419,11 @@ class _BottomMeta extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: Colors.white, fontSize: 14),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 1),
           Row(
             children: [
-              const Iconify(Teenyicons.play_circle_outline, size: 48, color: Colors.white70),
-              const SizedBox(width: 4),
+             
+              const SizedBox(width: 15),
               Expanded(
                 child: Text(
                   item.music,
@@ -435,7 +432,7 @@ class _BottomMeta extends StatelessWidget {
                   style: const TextStyle(color: Colors.white70, fontSize: 12),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 1),
                Iconify(
       muted
           ? MaterialSymbols.volume_off_rounded
@@ -556,41 +553,6 @@ class _BottomActionBar extends StatelessWidget {
 }
 
 /// Subtle bottom gradient
-class _BottomGradient extends StatelessWidget {
-  const _BottomGradient();
-
-  @override
-  Widget build(BuildContext context) {
-    return PositionedFill(
-      child: IgnorePointer(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.center,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.transparent,
-                Colors.black,
-                Colors.black,
-              ],
-              stops: const [0.5, 0.8, 1],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Helper to mimic Positioned.fill but keep const constructor above
-class PositionedFill extends StatelessWidget {
-  const PositionedFill({super.key, required this.child});
-  final Widget child;
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(top: 0, left: 0, right: 0, bottom: 0, child: child);
-  }
-}
 
 /// Demo items
 const _demoItems = <ReelItem>[
